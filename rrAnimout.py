@@ -10,9 +10,33 @@ import imp
 from functools import partial
 import sys, contextlib, os
 
-SCRIPT_PATH = r"M:\RND\SFtools\2023\render\rrAnimout.py"
-SCRIPT_BACKUP_DIR = r"M:\RND\SFtools\2023\render\_t"
-DEPLOY_ALLOWED_USERS = {"hwang"}
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+SHARED_MODULE_SEARCH_PATHS = [
+    THIS_DIR,
+    r"C:\Users\hwang\Desktop\codex\rrRender",
+]
+for search_path in SHARED_MODULE_SEARCH_PATHS:
+    if search_path and os.path.isdir(search_path) and search_path not in sys.path:
+        sys.path.append(search_path)
+
+try:
+    from pipeline_shared import (
+        build_legacy_rrrender_project_entry,
+        get_project_names as get_pipeline_project_names,
+        get_scene_depth_map,
+        launch_project_setup_app,
+        load_pipeline_config,
+        normalize_project_name as normalize_pipeline_project_name,
+    )
+    PIPELINE_SHARED_AVAILABLE = True
+except Exception:
+    build_legacy_rrrender_project_entry = None
+    get_pipeline_project_names = None
+    get_scene_depth_map = None
+    launch_project_setup_app = None
+    load_pipeline_config = None
+    normalize_pipeline_project_name = None
+    PIPELINE_SHARED_AVAILABLE = False
 
 @contextlib.contextmanager
 def suppress_stdout_stderr():
@@ -31,74 +55,74 @@ def suppress_stdout_stderr():
 
 # 스크립트 작업 ID를 저장할 전역 변수
 scriptJobId = None
-projects = {
-    "THE_TRAP": "T:/",
-    "BTS": "B:/",
-    "ARBO_BION": "A:/",
-    "CKR": "K:/",
-    "DSC": "S:/",
-    "FUZZ": "Z:/",
-    "COC": "S:/PROJECT/COC/02_Production"
+ppPath = 'M:/RND/SFtools/2023/pipeline/'
+
+PROJECT_SETTINGS_DIR = r"M:\RND\SFtools\2023\render\_json"
+PROJECT_SETTINGS_FILENAME = "rrRender_project_paths.json"
+HWANG_LOCAL_PROJECT_SETTINGS_SOURCE_DIR = r"C:\Users\hwang\Desktop\codex\rrRender\_json"
+HWANG_RUNTIME_PROJECT_SETTINGS_DIR = r"C:\_json\rrRender_dev"
+SCRIPT_PATH = r"M:\RND\SFtools\2023\render\rrAnimout.py"
+SCRIPT_BACKUP_DIR = r"M:\RND\SFtools\2023\render\_t"
+HWANG_LOCAL_SCRIPT_PATH = r"C:\Users\hwang\Desktop\codex\rrRender\rrAnimout.py"
+DEPLOY_ALLOWED_USERS = {"hwang"}
+
+PROJECT_NAME_ALIASES = {
+    "THE_TRAP": "THE_TRAP",
+    "TTM": "THE_TRAP",
+    "ARBO_BION": "ARBOBION",
+    "ARBOBION": "ARBOBION",
+    "ARB": "ARBOBION",
+    "BTS": "BTS",
+    "CKR": "CKR",
+    "DSC": "DSC",
+    "FUZZ": "FUZZ",
+    "COC": "COC",
 }
 
-
-def normalize_path(path):
-    return os.path.normcase(os.path.abspath(path))
-
-
-def can_show_deploy_tools():
-    return os.environ.get("USERNAME", "").strip().lower() in {user.lower() for user in DEPLOY_ALLOWED_USERS}
-
-
-def get_next_script_backup_path(target_path=SCRIPT_PATH, backup_dir=SCRIPT_BACKUP_DIR):
-    base_name = os.path.splitext(os.path.basename(target_path))[0]
-    extension = os.path.splitext(target_path)[1]
-    version_pattern = re.compile(rf"^{re.escape(base_name)}_v(\d+)(?:.*){re.escape(extension)}$", re.IGNORECASE)
-    max_version = 0
-    if os.path.isdir(backup_dir):
-        for file_name in os.listdir(backup_dir):
-            match = version_pattern.match(file_name)
-            if match:
-                max_version = max(max_version, int(match.group(1)))
-    next_version = max_version + 1
-    return os.path.join(backup_dir, f"{base_name}_v{next_version:03d}{extension}"), next_version
-
-
-def reload_rranimout(*args):
-    try:
-        if cmds.window("rrAnimout", exists=True):
-            cmds.deleteUI("rrAnimout")
-        create_ui()
-    except Exception as e:
-        cmds.warning(f"[AnimOut Reload] Failed: {e}")
-
-
-def deploy_rranimout(*args):
-    local_path = os.path.abspath(__file__)
-    target_path = SCRIPT_PATH
-    if not can_show_deploy_tools():
-        cmds.warning("[AnimOut Deploy] Deploy is allowed only for approved users.")
-        return
-    if normalize_path(local_path) == normalize_path(target_path):
-        cmds.warning("[AnimOut Deploy] This script is already running from the deploy path.")
-        return
-    try:
-        os.makedirs(os.path.dirname(target_path), exist_ok=True)
-        os.makedirs(SCRIPT_BACKUP_DIR, exist_ok=True)
-        if os.path.exists(target_path):
-            backup_path, version_number = get_next_script_backup_path(target_path, SCRIPT_BACKUP_DIR)
-            shutil.copy2(target_path, backup_path)
-            print(f"[AnimOut Deploy] Backup v{version_number:03d}: {backup_path}")
-        shutil.copy2(local_path, target_path)
-        cmds.confirmDialog(
-            title="Deploy Complete",
-            message=f"Deployed rrAnimout.py\n\nFrom:\n{local_path}\n\nTo:\n{target_path}",
-            button=["OK"]
-        )
-    except Exception as e:
-        cmds.warning(f"[AnimOut Deploy] Failed: {e}")
-
-ppPath = 'M:/RND/SFtools/2023/pipeline/'
+DEFAULT_PROJECT_CONFIG = {
+    "THE_TRAP": {
+        "drive": "T:/", "prefix": "ttm", "asset_base": "T:/assets", "scene_base": "T:/",
+        "asset_ch_dir": "ch", "asset_bg_dir": "bg", "asset_prop_dir": "prop",
+        "scene_root_dir": "scenes", "ren_dir": "ren", "cache_dir": "cache", "publish_dir": "pub",
+    },
+    "ARBOBION": {
+        "drive": "A:/", "prefix": "ab", "asset_base": "A:/assets", "scene_base": "A:/",
+        "asset_ch_dir": "ch", "asset_bg_dir": "bg", "asset_prop_dir": "prop",
+        "scene_root_dir": "scenes", "ren_dir": "ren", "cache_dir": "cache", "publish_dir": "pub",
+    },
+    "BTS": {
+        "drive": "B:/", "prefix": "BTS", "asset_base": "B:/assets", "scene_base": "B:/",
+        "asset_ch_dir": "ch", "asset_bg_dir": "bg", "asset_prop_dir": "prop",
+        "scene_root_dir": "scenes", "ren_dir": "ren", "cache_dir": "cache", "publish_dir": "pub",
+    },
+    "CKR": {
+        "drive": "K:/", "prefix": "CKR", "asset_base": "K:/assets", "scene_base": "K:/",
+        "asset_ch_dir": "ch", "asset_bg_dir": "bg", "asset_prop_dir": "prop",
+        "scene_root_dir": "scenes", "ren_dir": "ren", "cache_dir": "cache", "publish_dir": "pub",
+    },
+    "DSC": {
+        "drive": "S:/", "prefix": "DSC", "asset_base": "S:/assets", "scene_base": "S:/",
+        "asset_ch_dir": "ch", "asset_bg_dir": "bg", "asset_prop_dir": "prop",
+        "scene_root_dir": "scenes", "ren_dir": "ren", "cache_dir": "cache", "publish_dir": "pub",
+    },
+    "FUZZ": {
+        "drive": "Z:/", "prefix": "FUZZ", "asset_base": "Z:/assets", "scene_base": "Z:/",
+        "asset_ch_dir": "ch", "asset_bg_dir": "bg", "asset_prop_dir": "prop",
+        "scene_root_dir": "scenes", "ren_dir": "ren", "cache_dir": "cache", "publish_dir": "pub",
+    },
+    "COC": {
+        "drive": "S:/PROJECT/COC/02_Production", "prefix": "COC",
+        "asset_base": "S:/PROJECT/COC/02_Production",
+        "scene_base": "S:/PROJECT/COC/02_Production",
+        "cache_base": "S:/PROJECT/COC/02_Production/Rendering",
+        "asset_ch_dir": "CHSetup/controller", "asset_bg_dir": "bg", "asset_prop_dir": "prop",
+        "scene_root_dir": "Animation/Detail", "ren_dir": "maya", "cache_dir": "cache", "publish_dir": "pub",
+        "scene_identifier_mode": "filename",
+        "geometry_root_hint": "CHARACTER/Geometry",
+    },
+}
+PROJECT_CONFIG = dict((k, dict(v)) for k, v in DEFAULT_PROJECT_CONFIG.items())
+PROJECT_CONFIG_LOADED = False
 
 import maya.cmds as cmds
 
@@ -271,12 +295,235 @@ def aniPublish():
     sfAniPublish.publishAni()
     sfAniPublish.backupAni()
 
+def normalize_project_name(project_name):
+    raw_name = str(project_name or "").strip()
+    if not raw_name:
+        return ""
+    return PROJECT_NAME_ALIASES.get(raw_name.upper(), raw_name.upper())
+
+def is_hwang_dev_environment():
+    return os.environ.get("USERNAME", "").strip().lower() == "hwang"
+
+def get_active_project_settings_dir():
+    if is_hwang_dev_environment():
+        if os.path.isdir(HWANG_RUNTIME_PROJECT_SETTINGS_DIR):
+            return HWANG_RUNTIME_PROJECT_SETTINGS_DIR
+        if os.path.isdir(HWANG_LOCAL_PROJECT_SETTINGS_SOURCE_DIR):
+            return HWANG_LOCAL_PROJECT_SETTINGS_SOURCE_DIR
+    return PROJECT_SETTINGS_DIR
+
+def get_project_settings_store_path():
+    return os.path.join(get_active_project_settings_dir(), PROJECT_SETTINGS_FILENAME)
+
+def normalize_project_config_entry(project_name, raw_config=None):
+    normalized = normalize_project_name(project_name)
+    base = dict(DEFAULT_PROJECT_CONFIG.get(normalized, DEFAULT_PROJECT_CONFIG["BTS"]))
+    if isinstance(raw_config, dict):
+        for key, value in raw_config.items():
+            if value is not None:
+                base[key] = str(value)
+    return base
+
+def ensure_project_config_loaded(force=False):
+    global PROJECT_CONFIG, PROJECT_CONFIG_LOADED
+    if PROJECT_CONFIG_LOADED and PROJECT_CONFIG and not force:
+        return PROJECT_CONFIG
+
+    PROJECT_CONFIG = dict((k, dict(v)) for k, v in DEFAULT_PROJECT_CONFIG.items())
+    if PIPELINE_SHARED_AVAILABLE and load_pipeline_config and build_legacy_rrrender_project_entry:
+        try:
+            payload = load_pipeline_config()
+            for project_name in get_pipeline_project_names(payload):
+                normalized = normalize_project_name(project_name)
+                legacy_entry = build_legacy_rrrender_project_entry(project_name, payload)
+                if normalized and legacy_entry:
+                    PROJECT_CONFIG[normalized] = normalize_project_config_entry(normalized, legacy_entry)
+            PROJECT_CONFIG_LOADED = True
+            return PROJECT_CONFIG
+        except Exception as e:
+            cmds.warning(f"[AnimOut Setup] Shared pipeline config load failed, fallback to legacy JSON: {e}")
+
+    settings_path = get_project_settings_store_path()
+    try:
+        if os.path.exists(settings_path):
+            with open(settings_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            projects = payload.get("projects", payload) if isinstance(payload, dict) else {}
+            if isinstance(projects, dict):
+                for project_name, config in projects.items():
+                    normalized = normalize_project_name(project_name)
+                    if normalized:
+                        PROJECT_CONFIG[normalized] = normalize_project_config_entry(normalized, config)
+    except Exception as e:
+        cmds.warning(f"[AnimOut Setup] Project settings load failed: {e}")
+    PROJECT_CONFIG_LOADED = True
+    return PROJECT_CONFIG
+
+def save_project_config_store():
+    settings_path = get_project_settings_store_path()
+    os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+    payload = {
+        "version": 1,
+        "projects": dict((name, PROJECT_CONFIG[name]) for name in sorted(PROJECT_CONFIG.keys())),
+    }
+    with open(settings_path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+def get_config_by_project_name(project_name=None):
+    ensure_project_config_loaded()
+    normalized = normalize_project_name(project_name or current_project)
+    return PROJECT_CONFIG.get(normalized, PROJECT_CONFIG["BTS"])
+
+def join_config_path(*parts):
+    cleaned = [str(part or "").replace("\\", "/").strip("/") for part in parts if str(part or "").strip()]
+    if not cleaned:
+        return ""
+    first = cleaned[0]
+    if first.endswith(":"):
+        first += "/"
+    path = "/".join([first.rstrip("/")] + [p.strip("/") for p in cleaned[1:]])
+    return path.replace("\\", "/")
+
+def get_scene_root_path(project_name=None):
+    config = get_config_by_project_name(project_name)
+    return join_config_path(config.get("scene_base", config.get("drive", "")), config.get("scene_root_dir", "scenes"))
+
+def get_work_dir_name(project_name=None):
+    return get_config_by_project_name(project_name).get("ren_dir", "ren") or "ren"
+
+def get_cache_dir_name(project_name=None):
+    return get_config_by_project_name(project_name).get("cache_dir", "cache") or "cache"
+
+def uses_filename_scene_identifier(project_name=None):
+    return get_config_by_project_name(project_name).get("scene_identifier_mode", "") == "filename"
+
+def get_current_file_work_path_for_scene(scene_number, cut_number=None, process=None, project_name=None):
+    if not uses_filename_scene_identifier(project_name):
+        return None
+
+    current_file = cmds.file(q=True, sn=True)
+    if not current_file:
+        return None
+
+    scene_from_file, cut_from_file = parse_scene_cut_from_filename(current_file)
+    process_from_file = get_work_dir_name(project_name)
+    try:
+        scene_root = os.path.normpath(get_scene_root_path(project_name))
+        relative_parts = os.path.relpath(os.path.normpath(current_file), scene_root).split(os.sep)
+        if len(relative_parts) >= 3:
+            process_from_file = relative_parts[1]
+    except Exception:
+        pass
+
+    requested_scene = str(scene_number or "")
+    requested_cut = str(cut_number or "")
+    requested_process = str(process or get_work_dir_name(project_name))
+    if scene_from_file == requested_scene and (not requested_cut or requested_cut == "N/A" or cut_from_file == requested_cut):
+        if not requested_process or process_from_file == requested_process:
+            return os.path.dirname(os.path.normpath(current_file))
+    return None
+
+def find_filename_scene_work_path(scene_number, cut_number=None, process=None, project_name=None):
+    if not uses_filename_scene_identifier(project_name):
+        return None
+
+    root_path = get_scene_root_path(project_name)
+    work_dir = process or get_work_dir_name(project_name)
+    if not os.path.isdir(root_path):
+        return None
+
+    target_scene = str(scene_number or "")
+    target_cut = str(cut_number or "")
+    for episode_name in sorted(os.listdir(root_path)):
+        episode_path = os.path.join(root_path, episode_name)
+        candidate_work_path = os.path.join(episode_path, work_dir)
+        if not os.path.isdir(candidate_work_path):
+            continue
+        for file_name in os.listdir(candidate_work_path):
+            if not file_name.lower().endswith((".ma", ".mb")):
+                continue
+            file_scene, file_cut = parse_scene_cut_from_filename(file_name)
+            if file_scene == target_scene and (not target_cut or target_cut == "N/A" or file_cut == target_cut):
+                return os.path.normpath(candidate_work_path)
+    return None
+
+def get_scene_work_path(scene_number, cut_number=None, process=None, project_name=None):
+    filename_work_path = get_current_file_work_path_for_scene(scene_number, cut_number, process, project_name)
+    if filename_work_path:
+        return filename_work_path
+
+    filename_work_path = find_filename_scene_work_path(scene_number, cut_number, process, project_name)
+    if filename_work_path:
+        return filename_work_path
+
+    root_path = get_scene_root_path(project_name)
+    work_dir = process or get_work_dir_name(project_name)
+    parts = [root_path, scene_number]
+    if cut_number and cut_number != "N/A" and not uses_filename_scene_identifier(project_name):
+        parts.append(cut_number)
+    parts.append(work_dir)
+    return os.path.normpath(join_config_path(*parts))
+
+def get_coc_cut_folder_path(scene_number, cut_number=None, project_name=None, episode_name=None):
+    if not is_character_only_project(project_name):
+        return None
+
+    config = get_config_by_project_name(project_name)
+    cache_base = config.get("cache_base", "")
+    scene_part = str(scene_number or "").strip()
+    cut_part = str(cut_number or "").strip()
+    if not scene_part or scene_part == "N/A":
+        return None
+
+    current_file = cmds.file(q=True, sn=True)
+    episode_name = str(episode_name or "").strip()
+    if not episode_name and current_file:
+        try:
+            scene_root = os.path.normpath(get_scene_root_path(project_name))
+            relative_parts = os.path.relpath(os.path.normpath(current_file), scene_root).split(os.sep)
+            if relative_parts:
+                episode_name = relative_parts[0]
+        except Exception:
+            episode_name = ""
+
+    if not episode_name:
+        work_path = get_scene_work_path(scene_number, cut_number, get_work_dir_name(project_name), project_name)
+        if not work_path:
+            return None
+        episode_name = os.path.basename(os.path.dirname(os.path.normpath(work_path)))
+
+    cut_folder_name = scene_part
+    if cut_part and cut_part != "N/A":
+        cut_folder_name = f"{scene_part}_{cut_part}"
+
+    if cache_base:
+        return os.path.normpath(join_config_path(cache_base, episode_name, cut_folder_name))
+    return os.path.normpath(join_config_path(get_scene_root_path(project_name), episode_name, cut_folder_name))
+
+def get_cache_dir_path(scene_number, cut_number=None, project_name=None, episode_name=None):
+    if is_character_only_project(project_name):
+        cut_folder_path = get_coc_cut_folder_path(scene_number, cut_number, project_name, episode_name=episode_name)
+        if cut_folder_path:
+            return os.path.join(cut_folder_path, get_cache_dir_name(project_name))
+    return os.path.join(get_scene_work_path(scene_number, cut_number, get_work_dir_name(project_name), project_name), get_cache_dir_name(project_name))
+
+def get_asset_category_root(category, project_name=None):
+    config = get_config_by_project_name(project_name)
+    asset_base = config.get("asset_base", config.get("drive", ""))
+    field_map = {"ch": "asset_ch_dir", "character": "asset_ch_dir", "bg": "asset_bg_dir", "prop": "asset_prop_dir"}
+    sub_dir = config.get(field_map.get(category, category), category)
+    return os.path.normpath(join_config_path(asset_base, sub_dir))
+
+def is_character_only_project(project_name=None):
+    return normalize_project_name(project_name or current_project) == "COC"
+
+def get_project_names():
+    ensure_project_config_loaded()
+    return sorted(PROJECT_CONFIG.keys())
+
 def get_current_project():
     """현재 열려있는 파일의 경로를 기반으로 프로젝트를 결정합니다."""
     file_path = cmds.file(query=True, sceneName=True)
-    normalized = os.path.normcase(os.path.normpath(file_path or ""))
-    if "project\\coc\\02_production" in normalized:
-        return 'COC'
     drive = os.path.splitdrive(file_path)[0].upper()  # 드라이브 문자를 추출하고 대문자로 변환
     if drive == 'A:':
         return 'ARBO_BION'
@@ -293,6 +540,22 @@ def get_current_project():
     else:
         return 'DSC'  # 기본값
 
+def get_current_project():
+    ensure_project_config_loaded()
+    file_path = cmds.file(query=True, sceneName=True)
+    normalized_file = os.path.normcase(os.path.normpath(file_path or ""))
+    matched_project = None
+    matched_length = -1
+    for project_name, config in PROJECT_CONFIG.items():
+        for root in (get_scene_root_path(project_name), config.get("drive", ""), config.get("scene_base", "")):
+            if not root:
+                continue
+            normalized_root = os.path.normcase(os.path.normpath(root))
+            if normalized_file.startswith(normalized_root) and len(normalized_root) > matched_length:
+                matched_project = project_name
+                matched_length = len(normalized_root)
+    return matched_project or "DSC"
+
 current_project = get_current_project()
 
 def get_project_paths():
@@ -302,8 +565,7 @@ def get_project_paths():
         'BTS': "B:\\",        
         'CKR': "K:\\",
         'DSC': "S:\\",
-        'FUZZ': "Z:\\",
-        'COC': "S:\\PROJECT\\COC\\02_Production"
+        'FUZZ': "Z:\\"        
     }
     project_path = paths.get(current_project, "")
     return project_path
@@ -315,8 +577,7 @@ def get_project_path():
         'ARBO_BION': "A:\\",
         'CKR': "K:\\",        
         'DSC': "S:\\",
-        'FUZZ': "Z:\\",
-        'COC': "S:\\PROJECT\\COC\\02_Production"
+        'FUZZ': "Z:\\"
     }
     return paths
 
@@ -341,8 +602,6 @@ def get_project_prefix():
     }
 
     project_prefix = prefixes.get(current_project, "dsc")
-    if current_project == "COC":
-        return "COC"
 
     # 🔹 현재 씬 이름에서 프로젝트명 감지 (대소문자 무시)
     scene_path = cmds.file(query=True, sceneName=True)
@@ -359,71 +618,33 @@ def get_project_prefix():
 
 
 
+def get_project_paths():
+    return get_config_by_project_name(current_project).get("drive", "")
+
+def get_project_path():
+    ensure_project_config_loaded()
+    return dict((name, config.get("drive", "")) for name, config in PROJECT_CONFIG.items())
+
+def get_project_prefix():
+    ensure_project_config_loaded()
+    prefixes = dict((name, config.get("prefix", "")) for name, config in PROJECT_CONFIG.items())
+    project_prefix = get_config_by_project_name(current_project).get("prefix", "dsc")
+    scene_path = cmds.file(query=True, sceneName=True)
+    file_name = os.path.basename(scene_path).lower()
+    for proj, prefix in prefixes.items():
+        if prefix and prefix.lower() in file_name:
+            return prefix
+    return project_prefix
+
 project_paths = get_project_path()
 
 def set_current_project(project):
     global current_project
-    current_project = project
-
-def is_coc_project(project_name=None):
-    return (project_name or current_project) == "COC"
-
-def get_coc_scene_root():
-    return os.path.normpath(os.path.join(get_project_paths(), "Animation", "Detail"))
-
-def get_coc_render_root():
-    return os.path.normpath(os.path.join(get_project_paths(), "Rendering"))
-
-def parse_scene_cut_from_filename(file_path):
-    base_name = os.path.splitext(os.path.basename(file_path))[0]
-    coc_match = re.search(r"(C\d+)[_-](\d+)", base_name, re.IGNORECASE)
-    if coc_match:
-        return coc_match.group(1), coc_match.group(2)
-    parts = base_name.split("_")
-    if len(parts) >= 3:
-        return parts[1], parts[2]
-    return "N/A", "N/A"
-
-def get_coc_browser_context(file_path):
-    normalized_path = os.path.normpath(file_path)
-    file_name = os.path.basename(normalized_path)
-    process = "maya"
-    episode_name = "N/A"
-    try:
-        relative_parts = os.path.relpath(normalized_path, get_coc_scene_root()).split(os.sep)
-        if relative_parts:
-            episode_name = relative_parts[0]
-        if len(relative_parts) >= 2:
-            process = relative_parts[1]
-    except Exception:
-        pass
-    return episode_name, "N/A", process, file_name
-
-def get_coc_episode_name(file_path=None):
-    file_path = file_path or cmds.file(q=True, sn=True)
-    if not file_path:
-        return "N/A"
-    episode_name, _, _, _ = get_coc_browser_context(file_path)
-    return episode_name
-
-def get_cache_dir_path(scene_number, cut_number):
-    if is_coc_project():
-        episode_name = get_coc_episode_name()
-        cut_folder = str(scene_number or "N/A")
-        if cut_number and cut_number != "N/A":
-            cut_folder = f"{scene_number}_{cut_number}"
-        return os.path.normpath(os.path.join(get_coc_render_root(), episode_name, cut_folder, "cache"))
-    return os.path.normpath(os.path.join(get_project_paths(), "scenes", scene_number, cut_number, "ren", "cache"))
-
-def get_scene_work_path(scene_name, cut_name, process_name):
-    if is_coc_project():
-        return os.path.normpath(os.path.join(get_coc_scene_root(), scene_name, process_name))
-    return os.path.normpath(os.path.join(get_project_paths(), "scenes", scene_name, cut_name, process_name))
+    current_project = normalize_project_name(project)
+    refresh_project_asset_names()
 
 # 파일 경로 분석 함수
 def parse_file_path(file_path):
-    if is_coc_project():
-        return get_coc_browser_context(file_path)
     normalized_path = os.path.normpath(file_path)
     path_parts = normalized_path.split(os.sep)
     if len(path_parts) < 6:
@@ -434,13 +655,50 @@ def parse_file_path(file_path):
     file_name = path_parts[-1]
     return scene_number, cut_number, process, file_name
 
+
+def parse_coc_file_path(file_path):
+    normalized_path = os.path.normpath(file_path)
+    file_name = os.path.basename(normalized_path)
+    scene_number, cut_number = parse_scene_cut_from_filename(file_name)
+    episode_name = ""
+
+    if scene_number == "N/A":
+        parts = normalized_path.split(os.sep)
+        for part in parts:
+            if re.match(r"^C\d+$", str(part or ""), re.IGNORECASE):
+                scene_number = part
+                break
+
+    if cut_number == "N/A":
+        parts = normalized_path.split(os.sep)
+        for part in parts:
+            if re.match(r"^\d+$", str(part or "")):
+                cut_number = part
+                break
+
+    process = "maya"
+    try:
+        scene_root = os.path.normpath(get_scene_root_path("COC"))
+        relative_parts = os.path.relpath(normalized_path, scene_root).split(os.sep)
+        if relative_parts:
+            episode_name = relative_parts[0]
+        if len(relative_parts) >= 2:
+            process = relative_parts[1]
+    except Exception:
+        episode_name = ""
+
+    if not episode_name:
+        for part in normalized_path.split(os.sep):
+            if re.match(r"^EP\d+$", str(part or ""), re.IGNORECASE):
+                episode_name = part
+                break
+
+    return scene_number, cut_number, process, file_name, episode_name
+
 # 파일 유효성 검사 함수
 def is_valid_scene_file(file_path):
-    if is_coc_project():
-        normalized_file_path = os.path.normpath(file_path)
-        return normalized_file_path.startswith(get_coc_scene_root()) and file_path.lower().endswith((".ma", ".mb"))
     try:
-        scene_number, cut_number, process, file_name = parse_file_path(file_path)
+        scene_number, cut_number, process, file_name = parse_scene_cut_process_from_current_file(file_path)
     except ValueError as e:
         print(f"Invalid file path: {e}")
         return False
@@ -468,6 +726,78 @@ def is_valid_scene_file(file_path):
         return False
     return True
 
+def parse_scene_cut_from_filename(file_name):
+    base_name = os.path.splitext(os.path.basename(file_name))[0]
+    parts = base_name.split("_")
+    prefix = get_project_prefix().lower()
+    if len(parts) >= 3 and parts[0].lower() == prefix:
+        return parts[1], parts[2]
+
+    coc_match = re.search(r"(C\d+)[_-](\d+)", base_name, re.IGNORECASE)
+    if coc_match:
+        return coc_match.group(1), coc_match.group(2)
+
+    if len(parts) >= 2:
+        return parts[0], parts[1]
+    return "N/A", "N/A"
+
+def parse_file_path(file_path):
+    normalized_path = os.path.normpath(file_path)
+    file_name = os.path.basename(normalized_path)
+    scene_root = os.path.normpath(get_scene_root_path(current_project))
+    try:
+        relative = os.path.relpath(normalized_path, scene_root)
+        parts = relative.split(os.sep)
+    except Exception:
+        parts = []
+
+    if uses_filename_scene_identifier(current_project):
+        if len(parts) >= 3:
+            return parts[0], "N/A", parts[1], file_name
+        if len(parts) >= 2:
+            return parts[0], "N/A", get_work_dir_name(current_project), file_name
+        return "N/A", "N/A", get_work_dir_name(current_project), file_name
+
+    if len(parts) >= 4:
+        return parts[0], parts[1], parts[2], file_name
+    if len(parts) >= 3:
+        scene_number = parts[0]
+        cut_number = "N/A"
+        process = parts[1]
+        name_scene, name_cut = parse_scene_cut_from_filename(file_name)
+        if name_scene != "N/A":
+            scene_number = name_scene
+        if name_cut != "N/A":
+            cut_number = name_cut
+        return scene_number, cut_number, process, file_name
+
+    scene_number, cut_number = parse_scene_cut_from_filename(file_name)
+    return scene_number, cut_number, get_work_dir_name(current_project), file_name
+
+
+def parse_scene_cut_process_from_current_file(file_path):
+    if is_character_only_project(current_project):
+        return parse_coc_file_path(file_path)
+    return parse_file_path(file_path)
+
+def is_valid_scene_file(file_path):
+    if not file_path:
+        return False
+    try:
+        scene_number, cut_number, process, file_name = parse_scene_cut_process_from_current_file(file_path)
+    except ValueError as e:
+        print(f"Invalid file path: {e}")
+        return False
+
+    scene_root = os.path.normpath(get_scene_root_path(current_project))
+    normalized_file_path = os.path.normpath(file_path)
+    if not normalized_file_path.startswith(scene_root):
+        print(f"File path '{normalized_file_path}' does not start with scene root '{scene_root}'")
+        return False
+    if is_character_only_project(current_project):
+        return file_name.lower().endswith((".ma", ".mb"))
+    return file_name.lower().endswith((".ma", ".mb"))
+
 # 메뉴 초기화 함수
 def clear_option_menu(menu_name):
     menu_items = cmds.optionMenu(menu_name, query=True, itemListLong=True)
@@ -489,7 +819,7 @@ def update_scenes(*args):
     clear_option_menu('fileMenu')
 
     if project_path:
-        scenes_path = get_coc_scene_root() if is_coc_project() else os.path.join(project_path, 'scenes')
+        scenes_path = os.path.join(project_path, 'scenes')
         scenes = sorted(filter_folders(os.listdir(scenes_path)))
         if scenes:
             for scene in scenes:
@@ -510,17 +840,13 @@ def update_cuts(*args, selected_scene=None):
     clear_option_menu('fileMenu')
 
     if project_path and current_scene and current_scene != 'No scenes available':
-        if is_coc_project():
-            cmds.menuItem(parent='cutMenu', label='N/A')
-            update_processes(selected_cut='N/A')
+        cuts = sorted(filter_folders(os.listdir(os.path.join(project_path, 'scenes', current_scene))))
+        if cuts:
+            for cut in cuts:
+                cmds.menuItem(parent='cutMenu', label=cut)
+            update_processes(selected_cut=None)
         else:
-            cuts = sorted(filter_folders(os.listdir(os.path.join(project_path, 'scenes', current_scene))))
-            if cuts:
-                for cut in cuts:
-                    cmds.menuItem(parent='cutMenu', label=cut)
-                update_processes(selected_cut=None)
-            else:
-                cmds.menuItem(parent='cutMenu', label='No cuts available')
+            cmds.menuItem(parent='cutMenu', label='No cuts available')
 
 def incremental_save():
     change_description = cmds.textField(changeDescriptionField, query=True, text=True)  # 텍스트 필드의 내용을 가져옵니다.
@@ -568,21 +894,17 @@ def update_processes(*args, selected_cut=None):
     clear_option_menu('fileMenu')
     
     if project_path and current_scene and current_cut and current_scene != 'No scenes available' and current_cut != 'No cuts available':
-        if is_coc_project():
-            cmds.menuItem(parent='processMenu', label='maya')
-            update_files(selected_process='maya')
-        else:
-            processes_path = os.path.join(project_path, 'scenes', current_scene, current_cut)
-            if os.path.exists(processes_path):
-                processes = sorted([d for d in os.listdir(processes_path) if os.path.isdir(os.path.join(processes_path, d))])
-                if processes:
-                    for process in processes:
-                        cmds.menuItem(parent='processMenu', label=process)
-                    update_files(selected_process=None)
-                else:
-                    cmds.menuItem(parent='processMenu', label='No processes available')
+        processes_path = os.path.join(project_path, 'scenes', current_scene, current_cut)
+        if os.path.exists(processes_path):
+            processes = sorted([d for d in os.listdir(processes_path) if os.path.isdir(os.path.join(processes_path, d))])
+            if processes:
+                for process in processes:
+                    cmds.menuItem(parent='processMenu', label=process)
+                update_files(selected_process=None)
             else:
                 cmds.menuItem(parent='processMenu', label='No processes available')
+        else:
+            cmds.menuItem(parent='processMenu', label='No processes available')
 
 def update_files(*args, selected_process=None):
     global current_project
@@ -610,17 +932,13 @@ def update_files(*args, selected_process=None):
         # ✅ 일반 프로세스 처리
         if project_path and current_scene and current_cut and current_process and \
            current_scene != 'No scenes available' and current_cut != 'No cuts available' and current_process != 'No processes available':
-            files_path = get_scene_work_path(current_scene, current_cut, current_process)
+            files_path = os.path.join(project_path, 'scenes', current_scene, current_cut, current_process)
             if os.path.exists(files_path):
-                file_candidates = [f for f in os.listdir(files_path) if os.path.isfile(os.path.join(files_path, f)) and f.lower().endswith(('.ma', '.mb'))]
-                if is_coc_project():
-                    files = sorted(file_candidates, key=lambda f: f.lower())
-                else:
-                    files = sorted(
-                        file_candidates,
-                        key=lambda f: os.path.getmtime(os.path.join(files_path, f)),
-                        reverse=True
-                    )
+                files = sorted(
+                    [f for f in os.listdir(files_path) if os.path.isfile(os.path.join(files_path, f)) and f.endswith('.mb')],
+                    key=lambda f: os.path.getmtime(os.path.join(files_path, f)),
+                    reverse=True
+                )
                 if files:
                     for file in files:
                         cmds.menuItem(parent='fileMenu', label=file)
@@ -640,6 +958,123 @@ def update_files(*args, selected_process=None):
 
 
 # 현재 파일을 기반으로 메뉴 업데이트 함수
+def _add_empty_menu_item(menu_name, label):
+    cmds.menuItem(parent=menu_name, label=label)
+
+def update_scenes(*args):
+    global current_project
+    current_project = normalize_project_name(cmds.optionMenu(projectMenuName, query=True, value=True))
+    clear_option_menu('sceneMenu')
+    clear_option_menu('cutMenu')
+    clear_option_menu('processMenu')
+    clear_option_menu('fileMenu')
+    scenes_path = get_scene_root_path(current_project)
+    if not os.path.isdir(scenes_path):
+        _add_empty_menu_item('sceneMenu', 'No scenes available')
+        return
+    scenes = sorted(filter_folders([name for name in os.listdir(scenes_path) if os.path.isdir(os.path.join(scenes_path, name))]))
+    for scene in scenes:
+        cmds.menuItem(parent='sceneMenu', label=scene)
+    if scenes:
+        update_cuts()
+    else:
+        _add_empty_menu_item('sceneMenu', 'No scenes available')
+
+def update_cuts(*args, selected_scene=None):
+    global current_project
+    current_project = normalize_project_name(cmds.optionMenu(projectMenuName, query=True, value=True))
+    current_scene = selected_scene if selected_scene else cmds.optionMenu('sceneMenu', query=True, value=True)
+    clear_option_menu('cutMenu')
+    clear_option_menu('processMenu')
+    clear_option_menu('fileMenu')
+    if is_character_only_project(current_project):
+        cmds.menuItem(parent='cutMenu', label='N/A')
+        update_processes(selected_cut='N/A')
+        return
+    if not current_scene or current_scene == 'No scenes available':
+        _add_empty_menu_item('cutMenu', 'No cuts available')
+        return
+    scene_path = os.path.join(get_scene_root_path(current_project), current_scene)
+    cuts = sorted(filter_folders([name for name in os.listdir(scene_path) if os.path.isdir(os.path.join(scene_path, name))])) if os.path.isdir(scene_path) else []
+    if get_work_dir_name(current_project) in cuts:
+        cmds.menuItem(parent='cutMenu', label='N/A')
+        update_processes(selected_cut='N/A')
+        return
+    for cut in cuts:
+        cmds.menuItem(parent='cutMenu', label=cut)
+    if cuts:
+        update_processes(selected_cut=None)
+    else:
+        _add_empty_menu_item('cutMenu', 'No cuts available')
+
+def update_processes(*args, selected_cut=None):
+    global current_project
+    current_project = normalize_project_name(cmds.optionMenu(projectMenuName, query=True, value=True))
+    current_scene = cmds.optionMenu('sceneMenu', query=True, value=True)
+    current_cut = selected_cut if selected_cut else cmds.optionMenu('cutMenu', query=True, value=True)
+    clear_option_menu('processMenu')
+    clear_option_menu('fileMenu')
+    if is_character_only_project(current_project):
+        default_work = get_work_dir_name(current_project)
+        cmds.menuItem(parent='processMenu', label=default_work)
+        update_files(selected_process=default_work)
+        return
+    if not current_scene or current_scene == 'No scenes available':
+        _add_empty_menu_item('processMenu', 'No processes available')
+        return
+    base_path = os.path.join(get_scene_root_path(current_project), current_scene)
+    if current_cut and current_cut not in ('N/A', 'No cuts available'):
+        base_path = os.path.join(base_path, current_cut)
+    processes = sorted(filter_folders([name for name in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, name))])) if os.path.isdir(base_path) else []
+    default_work = get_work_dir_name(current_project)
+    if default_work not in processes:
+        processes.insert(0, default_work)
+    for process in processes:
+        cmds.menuItem(parent='processMenu', label=process)
+    update_files(selected_process=processes[0] if processes else None)
+
+def update_files(*args, selected_process=None):
+    global current_project
+    current_scene = cmds.optionMenu('sceneMenu', query=True, value=True)
+    current_cut = cmds.optionMenu('cutMenu', query=True, value=True)
+    current_process = selected_process if selected_process else cmds.optionMenu('processMenu', query=True, value=True)
+    clear_option_menu('fileMenu')
+    if not current_scene or current_scene == 'No scenes available' or not current_process or current_process == 'No processes available':
+        _add_empty_menu_item('fileMenu', 'No files found')
+        return
+    if is_character_only_project(current_project):
+        files_path = os.path.join(get_scene_root_path(current_project), current_scene, current_process)
+        files = []
+        if os.path.isdir(files_path):
+            files = sorted(
+                [f for f in os.listdir(files_path) if os.path.isfile(os.path.join(files_path, f)) and f.lower().endswith(('.ma', '.mb'))],
+                key=lambda f: os.path.getmtime(os.path.join(files_path, f)),
+                reverse=True
+            )
+        for file in files:
+            cmds.menuItem(parent='fileMenu', label=file)
+        if not files:
+            _add_empty_menu_item('fileMenu', 'No files found')
+        selected_file = cmds.optionMenu('fileMenu', q=True, value=True)
+        if selected_file and selected_file not in ('No files found', 'No files available'):
+            save_browser_state(current_project, current_scene, current_cut, current_process, selected_file)
+        return
+    files_path = get_scene_work_path(current_scene, current_cut, current_process, current_project)
+    files = []
+    if os.path.isdir(files_path):
+        files = sorted(
+            [f for f in os.listdir(files_path) if os.path.isfile(os.path.join(files_path, f)) and f.lower().endswith(('.ma', '.mb'))],
+            key=lambda f: os.path.getmtime(os.path.join(files_path, f)),
+            reverse=True
+        )
+    for file in files:
+        cmds.menuItem(parent='fileMenu', label=file)
+    if not files:
+        _add_empty_menu_item('fileMenu', 'No files found')
+    selected_file = cmds.optionMenu('fileMenu', q=True, value=True)
+    if selected_file and selected_file not in ('No files found', 'No files available'):
+        save_browser_state(current_project, current_scene, current_cut, current_process, selected_file)
+
 def update_menus_from_current_file():
     current_file_path = cmds.file(query=True, sceneName=True)
     if not current_file_path:
@@ -649,19 +1084,31 @@ def update_menus_from_current_file():
         cmds.warning("The current file does not meet the project criteria.")
         return
     try:
-        scene_number, cut_number, process, file_name = parse_file_path(current_file_path)
+        scene_number, cut_number, process, file_name = parse_scene_cut_process_from_current_file(current_file_path)
     except Exception as e:
         print(f"Error parsing file path: {e}")
         return
 
+    browser_scene = scene_number
+    browser_cut = cut_number
+    if is_character_only_project(current_project):
+        try:
+            coc_scene, coc_cut, coc_process, coc_file_name, episode_name = parse_coc_file_path(current_file_path)
+            browser_scene = episode_name if episode_name and episode_name != "N/A" else coc_scene
+            browser_cut = "N/A"
+            process = coc_process
+            file_name = coc_file_name
+        except Exception:
+            pass
+
     cmds.optionMenu('sceneMenu', edit=True, deleteAllItems=True)
-    cmds.menuItem(label=scene_number, parent='sceneMenu')
-    update_cuts(selected_scene=scene_number)
+    cmds.menuItem(label=browser_scene, parent='sceneMenu')
+    update_cuts(selected_scene=browser_scene)
 
     cut_menu_items = [item for item in cmds.optionMenu('cutMenu', query=True, itemListLong=True)]
-    if cut_number in [cmds.menuItem(item, query=True, label=True) for item in cut_menu_items]:
-        cmds.optionMenu('cutMenu', edit=True, value=cut_number)
-    update_processes(selected_cut=cut_number)
+    if browser_cut in [cmds.menuItem(item, query=True, label=True) for item in cut_menu_items]:
+        cmds.optionMenu('cutMenu', edit=True, value=browser_cut)
+    update_processes(selected_cut=browser_cut)
 
     process_menu_items = [item for item in cmds.optionMenu('processMenu', query=True, itemListLong=True)]
     if process in [cmds.menuItem(item, query=True, label=True) for item in process_menu_items]:
@@ -670,31 +1117,46 @@ def update_menus_from_current_file():
 
     cmds.optionMenu('fileMenu', edit=True, deleteAllItems=True)
     cmds.menuItem(label=file_name, parent='fileMenu')
+    save_browser_state(current_project, browser_scene, browser_cut, process, file_name)
 
 def open_selected_file(*args):
     global current_project
-    project_path = project_paths.get(current_project, "")
     current_scene = cmds.optionMenu('sceneMenu', query=True, value=True)
     current_cut = cmds.optionMenu('cutMenu', query=True, value=True)
     current_process = cmds.optionMenu('processMenu', query=True, value=True)
     selected_file = cmds.optionMenu('fileMenu', query=True, value=True)
     
-    if project_path and current_scene and current_cut and current_process and selected_file and selected_file != 'No files available':
-        file_path = os.path.join(get_scene_work_path(current_scene, current_cut, current_process), selected_file)
+    if current_scene and current_process and selected_file and selected_file not in ('No files available', 'No files found'):
+        if is_character_only_project(current_project):
+            file_path = os.path.join(get_scene_root_path(current_project), current_scene, current_process, selected_file)
+        else:
+            file_path = os.path.join(get_scene_work_path(current_scene, current_cut, current_process, current_project), selected_file)
         if os.path.exists(file_path):
+            if is_character_only_project(current_project):
+                scene_number, cut_number, process, file_name, episode_name = parse_coc_file_path(file_path)
+                browser_scene = episode_name if episode_name and episode_name != "N/A" else scene_number
+                browser_cut = "N/A"
+            else:
+                scene_number, cut_number, process, file_name = parse_file_path(file_path)
+                browser_scene = scene_number
+                browser_cut = cut_number
             cmds.file(file_path, open=True, force=True)
+            save_browser_state(current_project, browser_scene, browser_cut, process, selected_file)
+            update_menus_from_current_file()
             
 def load_selected_asset(action):
     global current_project
-    project_path = project_paths.get(current_project, "")
     selected_project = cmds.optionMenu(projectMenuName, query=True, value=True)
     current_scene = cmds.optionMenu('sceneMenu', query=True, value=True)
     current_cut = cmds.optionMenu('cutMenu', query=True, value=True)
     current_process = cmds.optionMenu('processMenu', query=True, value=True)
     selected_file = cmds.optionMenu('fileMenu', query=True, value=True)
 
-    if project_path and current_scene and current_cut and current_process and selected_file:
-        file_path = os.path.join(get_scene_work_path(current_scene, current_cut, current_process), selected_file)
+    if current_scene and current_process and selected_file:
+        if is_character_only_project(selected_project):
+            file_path = os.path.join(get_scene_root_path(selected_project), current_scene, current_process, selected_file)
+        else:
+            file_path = os.path.join(get_scene_work_path(current_scene, current_cut, current_process, selected_project), selected_file)
         if os.path.exists(file_path):
             if action == "open":
                 cmds.file(file_path, o=True, force=True, ignoreVersion=True)
@@ -711,31 +1173,50 @@ def clear_option_menu_items(option_menu):
         for item in menu_items:
             cmds.deleteUI(item)
 
+
+def get_option_menu_labels(option_menu):
+    menu_items = cmds.optionMenu(option_menu, q=True, itemListLong=True) or []
+    return [cmds.menuItem(item, q=True, label=True) for item in menu_items]
+
+
+def set_option_menu_value_if_exists(option_menu, value):
+    if not value:
+        return False
+    labels = get_option_menu_labels(option_menu)
+    if value in labels:
+        cmds.optionMenu(option_menu, e=True, value=value)
+        return True
+    return False
+
 def get_subfolder_names(directory, exclude_word='light'):
     try:
         subfolders = [name for name in os.listdir(directory) 
                       if os.path.isdir(os.path.join(directory, name)) and exclude_word not in name]
         return subfolders
     except OSError as e:
-        if not is_coc_project() or directory == os.path.join(get_project_paths(), "assets", "ch"):
-            print(f"Error: Failed to access directory '{directory}'. Exception: {e}")
+        # Some projects do not have all legacy asset folders. Keep startup quiet and show empty lists.
         return []
 
-base_path = get_project_paths()
-if is_coc_project():
-    character_dir = os.path.join(base_path, "CHSetup", "controller")
-    background_dir = ""
-    prop_dir = ""
+def refresh_project_asset_names():
+    global CHARACTER_NAMES, BG_NAMES, PROP_NAMES
+    if is_character_only_project(current_project):
+        coc_asset_root = get_asset_category_root("ch", current_project)
+        CHARACTER_NAMES = get_subfolder_names(coc_asset_root)
+        BG_NAMES = []
+        PROP_NAMES = []
+        return
+
+    character_dir = get_asset_category_root("ch", current_project)
     CHARACTER_NAMES = get_subfolder_names(character_dir)
-    BG_NAMES = []
-    PROP_NAMES = []
-else:
-    character_dir = os.path.join(base_path, "assets", "ch")
-    background_dir = os.path.join(base_path, "assets", "bg")
-    prop_dir = os.path.join(base_path, "assets", "prop")
-    CHARACTER_NAMES = get_subfolder_names(character_dir)
+    background_dir = get_asset_category_root("bg", current_project)
+    prop_dir = get_asset_category_root("prop", current_project)
     BG_NAMES = get_subfolder_names(background_dir)
     PROP_NAMES = get_subfolder_names(prop_dir)
+
+CHARACTER_NAMES = []
+BG_NAMES = []
+PROP_NAMES = []
+refresh_project_asset_names()
 
 # 현재 파일 이름 분석
 current_file_name = os.path.basename(cmds.file(q=True, sn=True))
@@ -760,7 +1241,7 @@ if is_ttm:
     # print("[INFO] 일반 파일: PROP_NAMES는 prop 디렉토리 기준으로만 사용됩니다.")
 
 
-# def get_scene_cut_camera(warn_if_missing=True):
+# def get_scene_cut_camera():
     # cameras = cmds.ls(type='camera')
     # for camera in cameras:
         # transform = cmds.listRelatives(camera, parent=True)[0]
@@ -771,7 +1252,7 @@ if is_ttm:
                 # return transform
     # return None
 
-def get_scene_cut_camera(warn_if_missing=True):
+def get_scene_cut_camera():
     """씬 내 카메라 자동 탐색 (기존 cam_패턴 + prefix_cam 패턴 모두 지원)"""
     cameras = cmds.ls(type='camera')
     if not cameras:
@@ -798,25 +1279,110 @@ def get_scene_cut_camera(warn_if_missing=True):
     return None
 
 
+def get_expected_camera_names(scene_number=None, cut_number=None):
+    if is_character_only_project(current_project):
+        file_path = cmds.file(q=True, sn=True) or ""
+        base_name = os.path.splitext(os.path.basename(file_path))[0].strip()
+        if not base_name:
+            return []
+
+        return [base_name, f"cam_{base_name}"]
+
+    if scene_number is None or cut_number is None:
+        scene_number, cut_number = get_scene_and_cut()
+
+    scene = str(scene_number or "").strip()
+    cut = str(cut_number or "").strip()
+    prefix = get_project_prefix()
+    if not scene or scene == "N/A":
+        return []
+    names = []
+
+    if cut and cut != "N/A":
+        names.extend([
+            f"{scene}_{cut}",
+            f"{scene}_{cut}".lower(),
+            f"cam_{scene}_{cut}",
+            f"{prefix}_{scene}_{cut}_cam",
+        ])
+
+    names.extend([
+        scene,
+        scene.lower(),
+        f"cam_{scene}",
+        f"{prefix}_{scene}_cam",
+    ])
+
+    unique_names = []
+    for name in names:
+        if name and name not in unique_names:
+            unique_names.append(name)
+    return unique_names
+
+def strip_namespace_and_path(node_name):
+    return str(node_name or "").split("|")[-1].split(":")[-1]
+
+def get_scene_cut_camera():
+    cameras = cmds.ls(type='camera')
+    if not cameras:
+        return None
+
+    expected_names = get_expected_camera_names()
+    if not expected_names:
+        return None
+    expected_lower = [name.lower() for name in expected_names]
+    fallback_candidates = []
+
+    for camera in cameras:
+        parents = cmds.listRelatives(camera, parent=True, fullPath=True) or []
+        if not parents:
+            continue
+        transform = parents[0]
+        transform_no_namespace = strip_namespace_and_path(transform)
+        name_lower = transform_no_namespace.lower()
+
+        if is_character_only_project(current_project):
+            if name_lower in expected_lower:
+                return transform
+
+        if name_lower in expected_lower:
+            return transform
+
+        if name_lower.startswith("cam_") or name_lower.endswith("_cam"):
+            fallback_candidates.append(transform)
+
+    if fallback_candidates:
+        cmds.warning(f"[AnimOut] No exact camera match for {expected_names}. Candidates: {fallback_candidates}")
+    else:
+        cmds.warning(f"[AnimOut] No camera found for expected names: {expected_names}")
+    return None
+
+
 def get_scene_and_cut():
     file_path = cmds.file(q=True, sn=True)
-    if is_coc_project():
-        return parse_scene_cut_from_filename(file_path)
-    file_name = file_path.split("/")[-1]
-    parts = file_name.split("_")
-    if len(parts) >= 4:
-        scene = parts[1]
-        cut = parts[2]
-    else:
-        scene = "N/A"
-        cut = "N/A"
-    return scene, cut
+    if file_path:
+        if is_character_only_project(current_project):
+            try:
+                scene, cut, process, file_name, episode_name = parse_coc_file_path(file_path)
+                if scene != "N/A":
+                    return scene, cut
+            except Exception:
+                pass
+        if uses_filename_scene_identifier(current_project):
+            return parse_scene_cut_from_filename(file_path)
+        try:
+            scene, cut, process, file_name = parse_file_path(file_path)
+            if scene != "N/A":
+                return scene, cut
+        except Exception:
+            pass
+    return parse_scene_cut_from_filename(file_path)
 
 scene_number, cut_number = get_scene_and_cut()
 
 def get_export_status(asset_name, category, scene_number, cut_number):
     project_prefix = get_project_prefix()
-    cache_dir = get_cache_dir_path(scene_number, cut_number)
+    cache_dir = get_cache_dir_path(scene_number, cut_number, current_project)
 
     if category == 'cam':
         paths = [
@@ -844,7 +1410,7 @@ def get_export_status(asset_name, category, scene_number, cut_number):
 
 def get_camera_export_status(scene_number, cut_number):
     project_prefix = get_project_prefix()
-    export_path = os.path.join(get_cache_dir_path(scene_number, cut_number), f"{project_prefix}_{scene_number}_{cut_number}_cam.fbx")
+    export_path = os.path.join(get_cache_dir_path(scene_number, cut_number, current_project), f"{project_prefix}_{scene_number}_{cut_number}_cam.fbx")
     if os.path.exists(export_path):
         mod_time = os.path.getmtime(export_path)
         formatted_date = time.strftime("%y%m%d", time.localtime(mod_time))
@@ -854,7 +1420,7 @@ def get_camera_export_status(scene_number, cut_number):
         return False, None
 
 def open_cache_folder(scene_number, cut_number):
-    cache_folder_path = get_cache_dir_path(scene_number, cut_number)
+    cache_folder_path = get_cache_dir_path(scene_number, cut_number, current_project)
     if os.path.exists(cache_folder_path):
         subprocess.Popen(f'explorer "{cache_folder_path}"')
     else:
@@ -862,13 +1428,12 @@ def open_cache_folder(scene_number, cut_number):
 
 def open_scene_folder():
     global current_project
-    project_path = project_paths.get(current_project, "")
     current_scene = cmds.optionMenu('sceneMenu', query=True, value=True)
     current_cut = cmds.optionMenu('cutMenu', query=True, value=True)
     current_process = cmds.optionMenu('processMenu', query=True, value=True)
     selected_file = cmds.optionMenu('fileMenu', query=True, value=True)
-    if project_path and current_scene and current_cut and current_process and selected_file:
-        file_folder = get_scene_work_path(current_scene, current_cut, current_process)
+    if current_scene and current_process and selected_file:
+        file_folder = get_scene_work_path(current_scene, current_cut, current_process, current_project)
         if os.path.exists(file_folder):
             if os.name == 'nt':  # If the operating system is Windows
                 subprocess.Popen(f'explorer "{file_folder}"')
@@ -1038,6 +1603,378 @@ def find_props_in_scene():
     return found_props
 
 
+def clean_asset_token(name):
+    token = os.path.splitext(os.path.basename(str(name or "")))[0]
+    token = token.split(":")[-1].split("|")[-1]
+    token = re.sub(r"^(rig|mod|pub|fin|final)_", "", token, flags=re.IGNORECASE)
+    token = re.sub(r"(_rig|_mod|_pub|_fin|_final)$", "", token, flags=re.IGNORECASE)
+    token = re.sub(r"(_rig|_mod|_pub|_fin|_final)_v\d+$", "", token, flags=re.IGNORECASE)
+    token = re.sub(r"[_-]?v\d+$", "", token, flags=re.IGNORECASE)
+    token = re.sub(r"[_-]?\d+$", "", token)
+    return token
+
+def get_reference_path_for_node(node):
+    try:
+        if cmds.referenceQuery(node, isNodeReferenced=True):
+            return cmds.referenceQuery(node, filename=True, withoutCopyNumber=True)
+    except Exception:
+        pass
+    return ""
+
+def get_asset_candidate_tokens(group):
+    short_name = group.split("|")[-1]
+    tokens = [short_name.split(":")[-1]]
+    tokens.extend([part for part in short_name.split(":")[:-1] if part])
+    reference_path = get_reference_path_for_node(group)
+    if reference_path:
+        tokens.append(os.path.basename(reference_path))
+        tokens.append(os.path.basename(os.path.dirname(reference_path)))
+
+    cleaned = []
+    for token in tokens:
+        clean = clean_asset_token(token)
+        if clean and clean not in cleaned:
+            cleaned.append(clean)
+    return cleaned
+
+def infer_asset_name_from_group(group, known_names):
+    known_names = list(known_names or [])
+    known_by_lower = dict((name.lower(), name) for name in known_names)
+    candidates = get_asset_candidate_tokens(group)
+
+    for candidate in candidates:
+        lowered = candidate.lower()
+        if lowered in known_by_lower:
+            return known_by_lower[lowered]
+
+    for candidate in candidates:
+        lowered = candidate.lower()
+        for known_lower, known_name in known_by_lower.items():
+            if lowered.startswith(known_lower) or known_lower.startswith(lowered):
+                return known_name
+
+    return candidates[0] if candidates else ""
+
+def infer_asset_name_from_reference_path(reference_path, known_names):
+    known_names = list(known_names or [])
+    known_by_lower = dict((name.lower(), name) for name in known_names)
+    path_parts = re.split(r"[\\/]+", str(reference_path or ""))
+    candidates = []
+
+    for part in reversed(path_parts):
+        clean = clean_asset_token(part)
+        if clean and clean not in candidates:
+            candidates.append(clean)
+
+    for candidate in candidates:
+        lowered = candidate.lower()
+        if lowered in known_by_lower:
+            return known_by_lower[lowered]
+
+    for candidate in candidates:
+        lowered = candidate.lower()
+        for known_lower, known_name in known_by_lower.items():
+            if known_lower in lowered or lowered in known_lower:
+                return known_name
+
+    return candidates[0] if candidates else ""
+
+def get_reference_nodes():
+    refs = []
+    try:
+        refs = cmds.ls(type="reference") or []
+    except Exception:
+        return []
+    return [ref for ref in refs if ref not in ("sharedReferenceNode",)]
+
+def get_reference_file_path(ref_node):
+    try:
+        return cmds.referenceQuery(ref_node, filename=True, withoutCopyNumber=True)
+    except Exception:
+        return ""
+
+def get_reference_root_transforms(ref_node):
+    try:
+        nodes = cmds.referenceQuery(ref_node, nodes=True, dagPath=True) or []
+    except Exception:
+        return []
+
+    transforms = []
+    node_set = set(nodes)
+    for node in nodes:
+        if not cmds.objExists(node):
+            continue
+        try:
+            if cmds.nodeType(node) != "transform":
+                continue
+        except Exception:
+            continue
+
+        parent = (cmds.listRelatives(node, parent=True, fullPath=True) or [None])[0]
+        if parent and parent in node_set:
+            continue
+        transforms.append(node)
+    return sorted(transforms, key=lambda item: item.count("|"))
+
+def get_reference_transforms(ref_node):
+    transforms = []
+
+    try:
+        nodes = cmds.referenceQuery(ref_node, nodes=True, dagPath=True) or []
+    except Exception:
+        nodes = []
+
+    for node in nodes:
+        if not cmds.objExists(node):
+            continue
+        long_names = cmds.ls(node, long=True) or [node]
+        node = long_names[0]
+        try:
+            if cmds.nodeType(node) == "transform":
+                transforms.append(node)
+        except Exception:
+            continue
+
+    # Fallback: some rigs do not round-trip cleanly through referenceQuery(..., nodes=True).
+    # Rebuild the transform set from the scene by matching the reference node directly.
+    all_transforms = cmds.ls(long=True, type="transform") or []
+    for node in all_transforms:
+        try:
+            if not cmds.referenceQuery(node, isNodeReferenced=True):
+                continue
+            owner_ref = cmds.referenceQuery(node, referenceNode=True)
+            if owner_ref == ref_node:
+                transforms.append(node)
+        except Exception:
+            continue
+
+    return sorted(set(transforms), key=lambda item: item.count("|"))
+
+def get_top_reference_transform_for_node(node, ref_transforms):
+    parents = []
+    current = node
+    while current:
+        parents.append(current)
+        rel = cmds.listRelatives(current, parent=True, fullPath=True) or []
+        current = rel[0] if rel else None
+
+    ref_set = set(ref_transforms)
+    for candidate in reversed(parents):
+        if candidate in ref_set:
+            return candidate
+    return node
+
+def get_reference_character_root_for_geometry(geometry_root, ref_transforms):
+    if not geometry_root:
+        return None
+
+    current = geometry_root
+    while current:
+        short_name = current.split("|")[-1].split(":")[-1]
+        if short_name.upper() == "CHARACTER":
+            return current
+        rel = cmds.listRelatives(current, parent=True, fullPath=True) or []
+        current = rel[0] if rel else None
+
+    return get_top_reference_transform_for_node(geometry_root, ref_transforms)
+
+def get_reference_character_root(ref_transforms):
+    for node in sorted(ref_transforms, key=lambda item: item.count("|")):
+        short_name = node.split("|")[-1].split(":")[-1]
+        if short_name.upper() == "CHARACTER":
+            return node
+    return ref_transforms[0] if ref_transforms else None
+
+def get_coc_character_and_geometry_roots(ref_transforms):
+    geometry_root = None
+
+    for node in sorted(ref_transforms, key=lambda item: item.count("|")):
+        short_name = node.split("|")[-1].split(":")[-1]
+        if short_name.lower() == "geometry":
+            geometry_root = node
+            break
+
+    if not geometry_root:
+        return None, None
+
+    parent = (cmds.listRelatives(geometry_root, parent=True, fullPath=True, type="transform") or [None])[0]
+    if not parent:
+        return None, None
+
+    return parent, geometry_root
+
+def summarize_reference_transform_names(ref_transforms, limit=30):
+    names = []
+    for node in ref_transforms[:limit]:
+        names.append(node.split("|")[-1])
+    return names
+
+def find_referenced_assets_in_scene(known_names, category):
+    found_assets = {}
+    name_counts = {}
+    debug_rows = []
+
+    for ref_node in get_reference_nodes():
+        reference_path = get_reference_file_path(ref_node)
+        asset_name = infer_asset_name_from_reference_path(reference_path, known_names)
+        debug_rows.append((ref_node, reference_path, asset_name))
+        if known_names and asset_name not in known_names:
+            continue
+
+        ref_transforms = get_reference_transforms(ref_node)
+        if not ref_transforms:
+            continue
+
+        asset_root = None
+        geometry_root = None
+
+        if is_character_only_project(current_project):
+            asset_root, geometry_root = get_coc_character_and_geometry_roots(ref_transforms)
+            if not asset_root:
+                asset_root = get_reference_character_root(ref_transforms) or (ref_transforms[0] if ref_transforms else None)
+            if not geometry_root and asset_root:
+                geometry_root = find_geometry_root(asset_root, asset_name)
+        else:
+            for node in ref_transforms:
+                if not is_visible_transform(node):
+                    continue
+                geometry_root = find_geometry_root(node, asset_name)
+                if geometry_root:
+                    asset_root = get_top_reference_transform_for_node(geometry_root, ref_transforms)
+                    break
+
+        if not asset_root:
+            if is_character_only_project(current_project):
+                print(f"[AnimOut][AssetScan] Matched asset '{asset_name}' but could not find a usable root in ref={ref_node}")
+                print(f"[AnimOut][AssetScan] Ref transforms sample: {summarize_reference_transform_names(ref_transforms)}")
+            continue
+
+        key = asset_name if asset_name not in name_counts else f"{asset_name}_{name_counts[asset_name]+1}"
+        name_counts[asset_name] = name_counts.get(asset_name, 0) + 1
+        found_assets[key] = asset_root
+
+    if category == "ch" and known_names and not found_assets:
+        print("[AnimOut][AssetScan] No referenced character assets matched.")
+        print(f"[AnimOut][AssetScan] Character list root: {get_asset_category_root('ch', current_project)}")
+        print(f"[AnimOut][AssetScan] Character names: {known_names}")
+        for ref_node, reference_path, asset_name in debug_rows:
+            print(f"[AnimOut][AssetScan] ref={ref_node} assetCandidate={asset_name} path={reference_path}")
+
+    return found_assets
+
+def get_transform_descendants(root):
+    descendants = cmds.listRelatives(root, ad=True, fullPath=True, type='transform') or []
+    descendants.reverse()
+    return descendants
+
+def find_geometry_root(group, asset_name=None):
+    if not cmds.objExists(group):
+        return None
+
+    nodes = [group] + get_transform_descendants(group)
+    asset_lower = str(asset_name or "").lower()
+    hint = get_config_by_project_name(current_project).get("geometry_root_hint", "")
+    hint_parts = [part for part in re.split(r"[\\/]+", hint.replace("{asset_name}", str(asset_name or ""))) if part]
+    hint_parts_lower = [part.lower() for part in hint_parts]
+
+    if is_character_only_project(current_project):
+        group_path = (cmds.ls(group, long=True) or [group])[0]
+        for node in nodes:
+            short_name = node.split("|")[-1].split(":")[-1]
+            if short_name.lower() != "geometry":
+                continue
+            parent = (cmds.listRelatives(node, parent=True, fullPath=True) or [""])[0]
+            if parent == group_path:
+                return node
+        return None
+
+    for node in nodes:
+        short_name = node.split("|")[-1].split(":")[-1].lower()
+        if normalize_name(node).lower() == "geo" or short_name == "geo":
+            return node
+
+    if hint_parts_lower:
+        for node in nodes:
+            short_name = node.split("|")[-1].split(":")[-1].lower()
+            if short_name in hint_parts_lower:
+                return node
+
+    if asset_lower:
+        for node in nodes:
+            if clean_asset_token(node).lower() == asset_lower:
+                return node
+
+    return None
+
+def is_visible_transform(group):
+    try:
+        return bool(cmds.getAttr(group + ".visibility"))
+    except Exception:
+        return True
+
+def has_geo_child(group):
+    if not cmds.objExists(group):
+        if group in selected_prop_paths:
+            group = selected_prop_paths[group]
+        elif group in prop_button_refs:
+            data = prop_button_refs[group]
+            group = data[1] if isinstance(data, tuple) else data
+        elif group in character_button_refs:
+            data = character_button_refs[group]
+            group = data[1] if isinstance(data, tuple) else data
+        elif group in bg_button_refs:
+            data = bg_button_refs[group]
+            group = data[1] if isinstance(data, tuple) else data
+        else:
+            cmds.warning(f"[has_geo_child] invalid group: {group}")
+            return None
+    asset_name = infer_asset_name_from_group(group, CHARACTER_NAMES + BG_NAMES + PROP_NAMES)
+    return find_geometry_root(group, asset_name)
+
+def find_assets_in_scene(known_names, category):
+    referenced_assets = find_referenced_assets_in_scene(known_names, category)
+    if referenced_assets:
+        return referenced_assets
+
+    all_groups = cmds.ls(long=True, dag=True, type='transform') or []
+    found_assets = {}
+    name_counts = {}
+    known_names = list(known_names or [])
+    if not known_names:
+        return found_assets
+    consumed_roots = []
+
+    for group in sorted(all_groups, key=lambda item: item.count("|")):
+        if any(group == root or group.startswith(root + "|") for root in consumed_roots):
+            continue
+        if not is_visible_transform(group):
+            continue
+        asset_name = infer_asset_name_from_group(group, known_names)
+        if known_names and asset_name not in known_names:
+            continue
+        geometry_root = find_geometry_root(group, asset_name)
+        if not geometry_root and not is_character_only_project(current_project):
+            continue
+
+        key = asset_name if asset_name not in name_counts else f"{asset_name}_{name_counts[asset_name]+1}"
+        name_counts[asset_name] = name_counts.get(asset_name, 0) + 1
+        found_assets[key] = group
+        consumed_roots.append(group)
+
+    return found_assets
+
+def find_characters_in_scene():
+    return find_assets_in_scene(CHARACTER_NAMES, "ch")
+
+def find_bgs_in_scene():
+    if is_character_only_project(current_project):
+        return {}
+    return find_assets_in_scene(BG_NAMES, "bg")
+
+def find_props_in_scene():
+    if is_character_only_project(current_project):
+        return {}
+    return find_assets_in_scene(PROP_NAMES, "prop")
 
 
 # def export_character(character_name, scene_number, cut_number):
@@ -1155,8 +2092,7 @@ def export_alembic(character_name, character_geo, scene_number, cut_number):
             cmds.warning(f"No geo group found for character.")
             return False
         duplicated = cmds.duplicate(rr=True, ic=True)[0]
-        base_path = get_project_paths()
-        export_path = get_cache_dir_path(str(scene_number), str(cut_number))
+        export_path = get_cache_dir_path(str(scene_number), str(cut_number), current_project)
         if not os.path.exists(export_path):
             os.makedirs(export_path)
         project_prefix = get_project_prefix()
@@ -1234,7 +2170,7 @@ def export_selected_to_usd():
             cmds.bakeResults(duplicated, t=(minTime, maxTime), shape=True)
             cmds.file(local_file_path, force=True, options=usd_options, type="USD Export", pr=True, es=True)
 
-            network_path = get_cache_dir_path(scene_number, cut_number)
+            network_path = get_cache_dir_path(scene_number, cut_number, current_project)
             os.makedirs(network_path, exist_ok=True)
             shutil.copy(local_file_path, os.path.join(network_path, file_name))
             os.remove(local_file_path)
@@ -1485,7 +2421,7 @@ def export_usd(character_name, character_group, scene_number, cut_number, minTim
                     pass
 
             # 네트워크 복사/정리
-            network_path = get_cache_dir_path(scene_number, cut_number)
+            network_path = os.path.normpath(get_cache_dir_path(scene_number, cut_number, current_project))
             dst_path = os.path.normpath(os.path.join(network_path, file_name))
             os.makedirs(network_path, exist_ok=True)
             shutil.copy(local_file_path, dst_path)
@@ -1689,7 +2625,7 @@ def export_usd_prop(scene_number, cut_number, prop_name, prop_group):
                 mel.eval(f'catch(`file -force -options "{usd_options}" -typ "USD Export" -pr -es "{usd_path}"`);')
 
             # 네트워크 캐시에 복사
-            network_path = get_cache_dir_path(scene_number, cut_number)
+            network_path = os.path.normpath(get_cache_dir_path(scene_number, cut_number, current_project))
             os.makedirs(network_path, exist_ok=True)
             dst_usd = os.path.join(network_path, file_name)
             shutil.copy(local_usd, dst_usd)
@@ -1829,7 +2765,7 @@ def export_usd_bg(bg_name, bg_geo, scene_number, cut_number, selected_only=False
                 if cmds.objExists("geo"):
                     cmds.delete("geo")
 
-                network_path = get_cache_dir_path(scene_number, cut_number)
+                network_path = os.path.normpath(get_cache_dir_path(scene_number, cut_number, current_project))
                 os.makedirs(network_path, exist_ok=True)
                 dst_path = os.path.normpath(os.path.join(network_path, file_name))
                 shutil.copy(local_file_path, dst_path)
@@ -2107,15 +3043,7 @@ def export_camera(scene_number, cut_number, selected_only=False):
                 pass
 
             # 8. export path
-            base_path = get_project_paths()
-            export_path = os.path.join(
-                base_path,
-                "scenes",
-                scene_number,
-                cut_number,
-                "ren",
-                "cache"
-            )
+            export_path = get_cache_dir_path(scene_number, cut_number, current_project)
             if not os.path.exists(export_path):
                 os.makedirs(export_path)
 
@@ -2320,7 +3248,8 @@ def update_category_menu(*args):
     
 def update_project_settings(project):
     global current_project
-    current_project = project
+    current_project = normalize_project_name(project)
+    refresh_project_asset_names()
     print(f"Project updated to: {current_project}")
 
 def updateUI():
@@ -2347,23 +3276,138 @@ def on_file_opened_callback(*args):
     scene, cut = get_scene_and_cut()
     update_camera_name(scene, cut)   # ✅ 씬 열릴 때 카메라 이름 검사
         
-def update_camera_name(scene_number, cut_number, warn_if_missing=True):
-    camera = get_scene_cut_camera(warn_if_missing=warn_if_missing)
+def update_camera_name(scene_number, cut_number):
+    if not scene_number or scene_number == "N/A" or not cut_number or cut_number == "N/A":
+        return None
+    camera = get_scene_cut_camera()
     if not camera:
         return None
-    expected_camera_name = f"cam_{scene_number}_{cut_number}"
-    if camera and camera != expected_camera_name:
+    camera_compare_name = strip_namespace_and_path(camera)
+    expected_camera_names = get_expected_camera_names(scene_number, cut_number)
+    expected_lower = [name.lower() for name in expected_camera_names]
+    if camera_compare_name.lower() in expected_lower:
+        return camera
+
+    preferred_camera_name = f"cam_{scene_number}_{cut_number}" if cut_number else f"cam_{scene_number}"
+    if camera and camera_compare_name.lower() != preferred_camera_name.lower():
         result = cmds.confirmDialog(
             title='카메라 이름 수정',
-            message=f"카메라 이름이 파일 이름과 일치하지 않습니다. 수정할까요?\n기존 이름: {camera}\n새 이름: {expected_camera_name}",
+            message=f"카메라 이름이 파일 이름과 일치하지 않습니다. 수정할까요?\n기존 이름: {camera_compare_name}\n새 이름: {preferred_camera_name}",
             button=['OK', 'Cancel'],
             defaultButton='OK',
             cancelButton='Cancel'
         )
         if result == 'OK':
-            cmds.rename(camera, expected_camera_name)
-            return expected_camera_name
+            cmds.rename(camera, preferred_camera_name)
+            return preferred_camera_name
     return camera
+
+def normalize_path(path):
+    return os.path.normcase(os.path.abspath(path))
+
+def can_show_deploy_tools():
+    return os.environ.get("USERNAME", "").strip().lower() in {user.lower() for user in DEPLOY_ALLOWED_USERS}
+
+def sync_hwang_local_project_json_files():
+    if not is_hwang_dev_environment():
+        return []
+    source_dir = HWANG_LOCAL_PROJECT_SETTINGS_SOURCE_DIR
+    target_dir = HWANG_RUNTIME_PROJECT_SETTINGS_DIR
+    if not os.path.isdir(source_dir):
+        raise FileNotFoundError(f"Local JSON source dir not found: {source_dir}")
+    os.makedirs(target_dir, exist_ok=True)
+    copied_paths = []
+    for file_name in (PROJECT_SETTINGS_FILENAME,):
+        source_path = os.path.join(source_dir, file_name)
+        if not os.path.exists(source_path):
+            raise FileNotFoundError(f"Local JSON source file not found: {source_path}")
+        target_path = os.path.join(target_dir, file_name)
+        shutil.copy2(source_path, target_path)
+        copied_paths.append(target_path)
+    return copied_paths
+
+def animout_setup_project_settings(*args):
+    global project_paths
+    try:
+        copied_paths = sync_hwang_local_project_json_files()
+        ensure_project_config_loaded(force=True)
+        project_paths = get_project_path()
+        refresh_project_asset_names()
+        if cmds.optionMenu(projectMenuName, exists=True):
+            clear_option_menu(projectMenuName)
+            for project_name in get_project_names():
+                cmds.menuItem(parent=projectMenuName, label=project_name)
+            cmds.optionMenu(projectMenuName, edit=True, value=current_project)
+            update_scenes()
+        print(f"[AnimOut Setup] Project settings ready: {get_project_settings_store_path()} | copied={len(copied_paths)}")
+    except Exception as e:
+        cmds.warning(f"[AnimOut Setup] Failed: {e}")
+
+def show_animout_setup_popup(*args):
+    if PIPELINE_SHARED_AVAILABLE:
+        try:
+            launch_project_setup_app("rrAnimout", current_project, wait=True)
+            animout_setup_project_settings()
+            return
+        except Exception as e:
+            cmds.warning(f"[AnimOut Setup] Shared setup app unavailable: {e}")
+
+    ensure_project_config_loaded()
+    projects = ", ".join(get_project_names())
+    message = (
+        "AnimOut Project Setup\n\n"
+        f"Settings:\n{get_project_settings_store_path()}\n\n"
+        f"Current Project: {current_project}\n\n"
+        f"Projects:\n{projects}\n\n"
+        "Apply setup now?"
+    )
+    result = cmds.confirmDialog(
+        title="AnimOut Setup",
+        message=message,
+        button=["Apply", "Close"],
+        defaultButton="Apply",
+        cancelButton="Close",
+        dismissString="Close",
+    )
+    if result == "Apply":
+        animout_setup_project_settings()
+
+def get_next_script_backup_path(target_path=SCRIPT_PATH, backup_dir=SCRIPT_BACKUP_DIR):
+    base_name = os.path.splitext(os.path.basename(target_path))[0]
+    extension = os.path.splitext(target_path)[1]
+    version_pattern = re.compile(rf"^{re.escape(base_name)}_v(\d+)(?:.*){re.escape(extension)}$", re.IGNORECASE)
+    max_version = 0
+    if os.path.isdir(backup_dir):
+        for file_name in os.listdir(backup_dir):
+            match = version_pattern.match(file_name)
+            if match:
+                max_version = max(max_version, int(match.group(1)))
+    next_version = max_version + 1
+    return os.path.join(backup_dir, f"{base_name}_v{next_version:03d}{extension}"), next_version
+
+def deploy_rranimout(*args):
+    local_path = os.path.abspath(__file__)
+    target_path = SCRIPT_PATH
+    if not can_show_deploy_tools():
+        cmds.warning("[AnimOut Deploy] Deploy is allowed only for approved users.")
+        return
+    if normalize_path(local_path) == normalize_path(target_path):
+        cmds.warning("[AnimOut Deploy] This script is already running from the deploy path.")
+        return
+    try:
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        os.makedirs(SCRIPT_BACKUP_DIR, exist_ok=True)
+        backup_path = None
+        if os.path.exists(target_path):
+            backup_path, version_number = get_next_script_backup_path(target_path, SCRIPT_BACKUP_DIR)
+            shutil.copy2(target_path, backup_path)
+            print(f"[AnimOut Deploy] Backup v{version_number:03d}: {backup_path}")
+        shutil.copy2(local_path, target_path)
+        print(f"[AnimOut Deploy] Complete: {local_path} -> {target_path}")
+        if backup_path:
+            print(f"[AnimOut Deploy] Previous deploy backup: {backup_path}")
+    except Exception as e:
+        cmds.warning(f"[AnimOut Deploy] Failed: {e}")
     
 def export_avatar():
     # 현재 열려있는 마야 파일 이름 가져오기
@@ -2378,9 +3422,7 @@ def export_avatar():
         cmds.error(f"파일 이름 형식이 잘못되었습니다: {current_file}")
         return
     
-    base_path = get_project_paths()
-    scene_number = file_name_parts[1]
-    cut_number = file_name_parts[2]
+    scene_number, cut_number = parse_scene_cut_from_filename(current_file)
     project_prefix = get_project_prefix()
     cfx_start_frame = int(cmds.optionMenu('minTimeMenu', query=True, value=True))
     cmds.currentTime(cfx_start_frame, edit=True)
@@ -2388,7 +3430,7 @@ def export_avatar():
     maxTime = cmds.playbackOptions(query=True, maxTime=True)
     
     # 경로 생성
-    export_path = os.path.join(base_path, f"/scenes/{scene_number}/{cut_number}/ren/cache/")
+    export_path = get_cache_dir_path(scene_number, cut_number, current_project)
     os.makedirs(export_path, exist_ok=True)
 
     # 선택된 오브젝트 가져오기
@@ -2431,9 +3473,7 @@ def export_garment():
         cmds.error(f"파일 이름 형식이 잘못되었습니다: {current_file}")
         return
 
-    base_path = get_project_paths()
-    scene_number = file_name_parts[1]
-    cut_number = file_name_parts[2]
+    scene_number, cut_number = parse_scene_cut_from_filename(current_file)
     project_prefix = get_project_prefix()
 
     # CFX Start Frame으로 시점 이동
@@ -2446,7 +3486,7 @@ def export_garment():
         cmds.error("선택된 오브젝트가 없습니다.")
         return
 
-    export_path = os.path.join(base_path, f"scenes/{scene_number}/{cut_number}/ren/cache/")
+    export_path = get_cache_dir_path(scene_number, cut_number, current_project)
     os.makedirs(export_path, exist_ok=True)
 
     # 개별 익스포트
@@ -2792,7 +3832,7 @@ def setup_bg_ui_animSet():
     bg_names_from_list = []
 
     for ui_name, group_path in bgs_from_scene.items():
-        base_name = ui_name.split("_")[0]
+        base_name = re.sub(r"_\d+$", "", ui_name)
         if base_name.lower() in bg_names_lower:
             bg_names_from_list.append(group_path)
 
@@ -2901,8 +3941,6 @@ def set_selected_as_published():
         'bg': (selected_bg_names, BG_NAMES, 'bg')
     }
 
-    base_path = get_project_paths()
-
     for category_key, (selected_set, name_list, category_folder) in category_sets.items():
         for full_path in selected_set:
             if not cmds.objExists(full_path):
@@ -2913,7 +3951,8 @@ def set_selected_as_published():
                 print(f"[INFO] {short_name}는 참조가 아닙니다. 스킵합니다.")
                 continue
 
-            publish_path = os.path.join(base_path, "assets", category_folder, short_name, f"{short_name}.mb")
+            publish_root = get_asset_category_root(category_folder, current_project)
+            publish_path = os.path.join(publish_root, short_name, f"{short_name}.mb")
             publish_path = os.path.normpath(publish_path)
 
             if not os.path.exists(publish_path):
@@ -2946,43 +3985,29 @@ def restore_browser_state():
 
     try:
         # 프로젝트 먼저 세팅
-        project_items = cmds.optionMenu(projectMenuName, q=True, itemListLong=True) or []
-        project_labels = [cmds.menuItem(i, q=True, label=True) for i in project_items]
-        target_project = state.get("project", "")
-        if target_project in project_labels:
-            cmds.optionMenu(projectMenuName, edit=True, value=target_project)
+        restored_project = normalize_project_name(state.get("project", current_project))
+        if not set_option_menu_value_if_exists(projectMenuName, restored_project):
+            fallback_project = normalize_project_name(current_project)
+            set_option_menu_value_if_exists(projectMenuName, fallback_project)
         update_scenes()
 
         # 씬 세팅 (존재 여부 확인)
-        scene_items = cmds.optionMenu("sceneMenu", q=True, itemListLong=True) or []
-        if scene_items:
-            labels = [cmds.menuItem(i, q=True, label=True) for i in scene_items]
-            if state["scene"] in labels:
-                cmds.optionMenu("sceneMenu", e=True, value=state["scene"])
-        update_cuts(selected_scene=state["scene"])
+        restored_scene = state.get("scene", "")
+        set_option_menu_value_if_exists("sceneMenu", restored_scene)
+        update_cuts(selected_scene=restored_scene)
 
         # 컷 세팅
-        cut_items = cmds.optionMenu("cutMenu", q=True, itemListLong=True) or []
-        if cut_items:
-            labels = [cmds.menuItem(i, q=True, label=True) for i in cut_items]
-            if state["cut"] in labels:
-                cmds.optionMenu("cutMenu", e=True, value=state["cut"])
-        update_processes(selected_cut=state["cut"])
+        restored_cut = state.get("cut", "")
+        set_option_menu_value_if_exists("cutMenu", restored_cut)
+        update_processes(selected_cut=restored_cut)
 
         # 프로세스 세팅
-        proc_items = cmds.optionMenu("processMenu", q=True, itemListLong=True) or []
-        if proc_items:
-            labels = [cmds.menuItem(i, q=True, label=True) for i in proc_items]
-            if state["process"] in labels:
-                cmds.optionMenu("processMenu", e=True, value=state["process"])
-        update_files(selected_process=state["process"])
+        restored_process = state.get("process", "")
+        set_option_menu_value_if_exists("processMenu", restored_process)
+        update_files(selected_process=restored_process)
 
         # 파일 세팅
-        file_items = cmds.optionMenu("fileMenu", q=True, itemListLong=True) or []
-        if file_items:
-            labels = [cmds.menuItem(i, q=True, label=True) for i in file_items]
-            if state["file"] in labels:
-                cmds.optionMenu("fileMenu", e=True, value=state["file"])
+        set_option_menu_value_if_exists("fileMenu", state.get("file", ""))
 
         # print("[AnimOut] 상태 복원 완료")
 
@@ -2992,6 +4017,7 @@ def restore_browser_state():
 
 
 def rrAnimout_UI():
+    global current_project
     window_name = "rrAnimout"
     if cmds.window(window_name, exists=True):
         cmds.deleteUI(window_name)
@@ -3001,38 +4027,29 @@ def rrAnimout_UI():
     # 전체 루트 columnLayout
     cmds.columnLayout("rootLayout", adjustableColumn=False, backgroundColor=[0.26, 0.26, 0.26])
 
-    # 제목
-    cmds.frameLayout(lv=0, mh=10, mw=8)
-    cmds.text(label=" SF ANIMOUT_test", align='left', height=20, enableBackground=False)
-    cmds.setParent('..')
-
+    # 제목 + 상단 컨트롤
+    cmds.frameLayout(lv=0, w=302, mh=0, mw=0, backgroundColor=[0.26, 0.26, 0.26])
+    cmds.columnLayout(adjustableColumn=False, backgroundColor=[0.26, 0.26, 0.26], co=('both', 0), rs=0)
+    cmds.text(label="SF ANIMOUT_test", align='center', height=24, enableBackground=False)
+    if can_show_deploy_tools():
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=[151, 151], columnAlign=[(1, 'center'), (2, 'center')])
+        cmds.button(label="Reload", height=24, width=151, backgroundColor=[0.32, 0.36, 0.36], command=reload_rranimout)
+        cmds.button(label="Deploy", height=24, width=151, backgroundColor=[0.36, 0.32, 0.32], command=deploy_rranimout)
+        cmds.setParent('..')
     global projectMenuName
     current_project = get_current_project()
     set_current_project(current_project)
-
-    if can_show_deploy_tools():
-        cmds.rowLayout(numberOfColumns=2, columnWidth2=[138, 138], columnAlign=[(1, 'center'), (2, 'center')])
-        cmds.button(label="Reload", backgroundColor=[0.35, 0.35, 0.35], height=30, width=138, command=reload_rranimout)
-        cmds.button(label="Deploy", backgroundColor=[0.35, 0.35, 0.35], height=30, width=138, command=deploy_rranimout)
-        cmds.setParent('..')
-        cmds.separator(height=2, style='none')
+    projectMenuName = cmds.optionMenu(label="", height=30, width=276, changeCommand=update_project_settings, backgroundColor=[0.35, 0.35, 0.35])
+    for project_name in get_project_names():
+        cmds.menuItem(label=project_name)
+    cmds.optionMenu(projectMenuName, edit=True, value=current_project, changeCommand=update_scenes)
+    cmds.setParent('..')
+    cmds.setParent('..')
 
     # SCENE BROWSER
     cmds.frameLayout(cll=1, lv=1, l='SCENE BROWSER', fn="smallPlainLabelFont", mh=0, mw=8, backgroundColor=[0.26, 0.26, 0.26])
     cmds.columnLayout(adjustableColumn=False, backgroundColor=[0.29, 0.29, 0.29], co=('both', 3), rs=3)
     cmds.separator(height=1, style='none')
-
-    cmds.rowLayout(numberOfColumns=2, columnWidth2=[50, 250], columnAlign=[(1, 'center'), (2, 'center')])
-    projectMenuName = cmds.optionMenu(label="", height=30, width=276, changeCommand=update_project_settings, backgroundColor=[0.35, 0.35, 0.35])
-    cmds.menuItem(label="THE_TRAP")
-    cmds.menuItem(label="ARBO_BION")
-    cmds.menuItem(label="BTS")    
-    cmds.menuItem(label="CKR")    
-    cmds.menuItem(label="COC")
-    cmds.menuItem(label="DSC")
-    cmds.menuItem(label="FUZZ")    
-    cmds.optionMenu(projectMenuName, edit=True, value=current_project, changeCommand=update_scenes)
-    cmds.setParent('..')
 
     cmds.rowLayout(numberOfColumns=3, columnWidth3=[90, 91, 91], columnAlign=[(1, 'center'), (2, 'center'), (3, 'center')])
     cmds.text(label="SCENE", height=20, width=90)
@@ -3049,7 +4066,7 @@ def rrAnimout_UI():
     cmds.rowLayout(numberOfColumns=1, columnWidth1=276, columnAlign=[(1, 'center')])
     cmds.optionMenu('fileMenu', height=30, width=276, backgroundColor=[0.35, 0.35, 0.35])
     scene, cut = get_scene_and_cut()
-    camera = update_camera_name(scene, cut, warn_if_missing=False)
+    camera = update_camera_name(scene, cut)
     cmds.setParent('..')
 
     cmds.rowLayout(numberOfColumns=2, columnWidth2=[45, 230])
@@ -3194,11 +4211,11 @@ def rrAnimout_UI():
     cmds.setParent('..')  # frameLayout ANIMOUT
 
     # CLOTH CONTROL
-    cmds.frameLayout("clothControlFrame", cll=1, lv=1, cl=1, l='CLOTH CONTROL', fn="smallPlainLabelFont", w=279, mh=0, mw=8, backgroundColor=[0.26, 0.26, 0.26])
-    cmds.columnLayout("clothControlColumn", width=279, adjustableColumn=False, backgroundColor=[0.29, 0.29, 0.29], co=('both', 3), rs=3)
+    cmds.frameLayout(cll=1, lv=1, cl=1, l='CLOTH CONTROL', fn="smallPlainLabelFont", mh=0, mw=8, backgroundColor=[0.26, 0.26, 0.26])
+    cmds.columnLayout(adjustableColumn=False, backgroundColor=[0.29, 0.29, 0.29], co=('both', 3), rs=3)
     cmds.separator(height=1, style='none')
-    cmds.rowLayout(numberOfColumns=1, columnWidth1=276, columnAlign=[(1, 'center')])
-    cmds.optionMenu('minTimeMenu', height=30, width=276, label='CFX Start Frame  :  ')
+    cmds.rowLayout(numberOfColumns=1, columnWidth1=(279), columnAlign=[(1, 'center')])
+    cmds.optionMenu('minTimeMenu', height=30 ,width=279 , label='CFX Start Frame  :  ')
     cmds.menuItem(label='1')
     cmds.menuItem(label='50')
     cmds.menuItem(label='70')
@@ -3208,9 +4225,9 @@ def rrAnimout_UI():
     cmds.menuItem(label='700')
     cmds.optionMenu('minTimeMenu', height=30 ,width=279 , edit=True, value='101')
     cmds.setParent('..')
-    cmds.rowLayout(numberOfColumns=2, columnWidth2=[138, 138], columnAlign=[(1, 'center'), (2, 'center')])
-    cmds.button(label="Export Avatar", backgroundColor=[0.4, 0.4, 0.4], height=30, width=138, command=lambda *args: export_avatar())
-    cmds.button(label="Export Garment", backgroundColor=[0.4, 0.4, 0.4], height=30, width=138, command=lambda *args: export_garment())
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=[140, 140], columnAlign=[(1, 'center'), (2, 'center')])
+    cmds.button(label="Export Avatar", backgroundColor=[0.4, 0.4, 0.4], height=30, width=140, command=lambda *args: export_avatar())
+    cmds.button(label="Export Garment", backgroundColor=[0.4, 0.4, 0.4], height=30, width=140, command=lambda *args: export_garment())
     cmds.setParent('..')
     cmds.separator(height=2, style='none')
     cmds.setParent('..')
@@ -3222,7 +4239,7 @@ def rrAnimout_UI():
 
 
 
-    cmds.showWindow()
+    cmds.showWindow(window_name)
     refresh_ui_on_new_file()
 
 
@@ -3239,10 +4256,5 @@ def on_open_button_click(*args):
     if result == 'OK':
         load_selected_asset("open")
 
-def create_ui():
-    cmds.evalDeferred(lambda *args: remove_malicious_nodes())
-    rrAnimout_UI()
-
-
-if __name__ == "__main__":
-    create_ui()
+cmds.evalDeferred(lambda *args: remove_malicious_nodes())
+rrAnimout_UI()
