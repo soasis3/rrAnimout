@@ -3027,6 +3027,13 @@ def rrAnimout_UI():
     cmds.optionMenu(projectMenuName, edit=True, value=current_project, changeCommand=update_scenes)
     cmds.setParent('..')
 
+    if can_show_deploy_tools():
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=[138, 138], columnAlign=[(1, 'center'), (2, 'center')])
+        cmds.button(label="Reload", backgroundColor=[0.35, 0.35, 0.35], height=30, width=138, command=reload_rranimout)
+        cmds.button(label="Deploy", backgroundColor=[0.35, 0.35, 0.35], height=30, width=138, command=deploy_rranimout)
+        cmds.setParent('..')
+        cmds.separator(height=2, style='none')
+
     cmds.rowLayout(numberOfColumns=3, columnWidth3=[90, 91, 91], columnAlign=[(1, 'center'), (2, 'center'), (3, 'center')])
     cmds.text(label="SCENE", height=20, width=90)
     cmds.text(label="CUT", height=20, width=91)
@@ -3183,12 +3190,6 @@ def rrAnimout_UI():
     cmds.button(label="Export ▶ 씬선택 카메라", height=30, backgroundColor=[0.35, 0.4, 0.4], width=276, command=export_selected_camera_from_scene)   
     cmds.setParent('..')
     cmds.separator(height=2, style='none')
-    if can_show_deploy_tools():
-        cmds.rowLayout(numberOfColumns=2, columnWidth2=[138, 138], columnAlign=[(1, 'center'), (2, 'center')])
-        cmds.button(label="Reload", backgroundColor=[0.35, 0.35, 0.35], height=30, width=138, command=reload_rranimout)
-        cmds.button(label="Deploy", backgroundColor=[0.35, 0.35, 0.35], height=30, width=138, command=deploy_rranimout)
-        cmds.setParent('..')
-        cmds.separator(height=2, style='none')
     cmds.setParent('..')  # columnLayout mainAnimoutColumn
     cmds.setParent('..')  # frameLayout ANIMOUT
 
