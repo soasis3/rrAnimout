@@ -3109,11 +3109,11 @@ def rrAnimout_UI():
     cmds.setParent('..')  # frameLayout ANIMOUT
 
     # CLOTH CONTROL
-    cmds.frameLayout(cll=1, lv=1, cl=1, l='CLOTH CONTROL', fn="smallPlainLabelFont", mh=0, mw=8, backgroundColor=[0.26, 0.26, 0.26])
-    cmds.columnLayout(adjustableColumn=False, backgroundColor=[0.29, 0.29, 0.29], co=('both', 3), rs=3)
+    cmds.frameLayout("clothControlFrame", cll=1, lv=1, cl=1, l='CLOTH CONTROL', fn="smallPlainLabelFont", w=279, mh=0, mw=8, backgroundColor=[0.26, 0.26, 0.26])
+    cmds.columnLayout("clothControlColumn", width=279, adjustableColumn=False, backgroundColor=[0.29, 0.29, 0.29], co=('both', 3), rs=3)
     cmds.separator(height=1, style='none')
-    cmds.rowLayout(numberOfColumns=1, columnWidth1=(279), columnAlign=[(1, 'center')])
-    cmds.optionMenu('minTimeMenu', height=30 ,width=279 , label='CFX Start Frame  :  ')
+    cmds.rowLayout(numberOfColumns=1, columnWidth1=276, columnAlign=[(1, 'center')])
+    cmds.optionMenu('minTimeMenu', height=30, width=276, label='CFX Start Frame  :  ')
     cmds.menuItem(label='1')
     cmds.menuItem(label='50')
     cmds.menuItem(label='70')
@@ -3123,9 +3123,9 @@ def rrAnimout_UI():
     cmds.menuItem(label='700')
     cmds.optionMenu('minTimeMenu', height=30 ,width=279 , edit=True, value='101')
     cmds.setParent('..')
-    cmds.rowLayout(numberOfColumns=2, columnWidth2=[140, 140], columnAlign=[(1, 'center'), (2, 'center')])
-    cmds.button(label="Export Avatar", backgroundColor=[0.4, 0.4, 0.4], height=30, width=140, command=lambda *args: export_avatar())
-    cmds.button(label="Export Garment", backgroundColor=[0.4, 0.4, 0.4], height=30, width=140, command=lambda *args: export_garment())
+    cmds.rowLayout(numberOfColumns=2, columnWidth2=[138, 138], columnAlign=[(1, 'center'), (2, 'center')])
+    cmds.button(label="Export Avatar", backgroundColor=[0.4, 0.4, 0.4], height=30, width=138, command=lambda *args: export_avatar())
+    cmds.button(label="Export Garment", backgroundColor=[0.4, 0.4, 0.4], height=30, width=138, command=lambda *args: export_garment())
     cmds.setParent('..')
     cmds.separator(height=2, style='none')
     cmds.setParent('..')
