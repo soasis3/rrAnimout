@@ -3408,7 +3408,14 @@ def deploy_rranimout(*args):
             print(f"[AnimOut Deploy] Previous deploy backup: {backup_path}")
     except Exception as e:
         cmds.warning(f"[AnimOut Deploy] Failed: {e}")
-    
+
+def reload_rranimout(*args):
+    try:
+        rrAnimout_UI()
+        print("[AnimOut Reload] UI rebuilt successfully.")
+    except Exception as e:
+        cmds.warning(f"[AnimOut Reload] Failed: {e}")
+
 def export_avatar():
     # 현재 열려있는 마야 파일 이름 가져오기
     current_file = cmds.file(query=True, sceneName=True, shortName=True)
