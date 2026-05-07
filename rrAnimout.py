@@ -556,6 +556,27 @@ def get_current_project():
                 matched_length = len(normalized_root)
     return matched_project or "DSC"
 
+def get_project_from_file_path(file_path):
+    ensure_project_config_loaded()
+    normalized_file = os.path.normcase(os.path.normpath(file_path or ""))
+    matched_project = None
+    matched_length = -1
+    for project_name, config in PROJECT_CONFIG.items():
+        for root in (
+            get_scene_root_path(project_name),
+            config.get("drive", ""),
+            config.get("scene_base", ""),
+            config.get("asset_base", ""),
+            config.get("cache_base", ""),
+        ):
+            if not root:
+                continue
+            normalized_root = os.path.normcase(os.path.normpath(root))
+            if normalized_file.startswith(normalized_root) and len(normalized_root) > matched_length:
+                matched_project = project_name
+                matched_length = len(normalized_root)
+    return matched_project
+
 current_project = get_current_project()
 
 def get_project_paths():
@@ -1076,6 +1097,7 @@ def update_files(*args, selected_process=None):
         save_browser_state(current_project, current_scene, current_cut, current_process, selected_file)
 
 def update_menus_from_current_file():
+    global current_project
     current_file_path = cmds.file(query=True, sceneName=True)
     if not current_file_path:
         cmds.warning("No file is currently open.")
@@ -1083,6 +1105,12 @@ def update_menus_from_current_file():
     if not is_valid_scene_file(current_file_path):
         cmds.warning("The current file does not meet the project criteria.")
         return
+    file_project = get_project_from_file_path(current_file_path)
+    if file_project:
+        current_project = normalize_project_name(file_project)
+        set_current_project(current_project)
+        if "projectMenuName" in globals() and projectMenuName and cmds.optionMenu(projectMenuName, exists=True):
+            set_option_menu_value_if_exists(projectMenuName, current_project)
     try:
         scene_number, cut_number, process, file_name = parse_scene_cut_process_from_current_file(current_file_path)
     except Exception as e:
@@ -1101,22 +1129,22 @@ def update_menus_from_current_file():
         except Exception:
             pass
 
-    cmds.optionMenu('sceneMenu', edit=True, deleteAllItems=True)
-    cmds.menuItem(label=browser_scene, parent='sceneMenu')
+    cmds.optionMenu("sceneMenu", edit=True, deleteAllItems=True)
+    cmds.menuItem(label=browser_scene, parent="sceneMenu")
     update_cuts(selected_scene=browser_scene)
 
-    cut_menu_items = [item for item in cmds.optionMenu('cutMenu', query=True, itemListLong=True)]
+    cut_menu_items = [item for item in cmds.optionMenu("cutMenu", query=True, itemListLong=True)]
     if browser_cut in [cmds.menuItem(item, query=True, label=True) for item in cut_menu_items]:
-        cmds.optionMenu('cutMenu', edit=True, value=browser_cut)
+        cmds.optionMenu("cutMenu", edit=True, value=browser_cut)
     update_processes(selected_cut=browser_cut)
 
-    process_menu_items = [item for item in cmds.optionMenu('processMenu', query=True, itemListLong=True)]
+    process_menu_items = [item for item in cmds.optionMenu("processMenu", query=True, itemListLong=True)]
     if process in [cmds.menuItem(item, query=True, label=True) for item in process_menu_items]:
-        cmds.optionMenu('processMenu', edit=True, value=process)
+        cmds.optionMenu("processMenu", edit=True, value=process)
     update_files(selected_process=process)
 
-    cmds.optionMenu('fileMenu', edit=True, deleteAllItems=True)
-    cmds.menuItem(label=file_name, parent='fileMenu')
+    cmds.optionMenu("fileMenu", edit=True, deleteAllItems=True)
+    cmds.menuItem(label=file_name, parent="fileMenu")
     save_browser_state(current_project, browser_scene, browser_cut, process, file_name)
 
 def open_selected_file(*args):
@@ -3269,13 +3297,14 @@ def refresh_ui_on_new_file():
         scriptJobId = cmds.scriptJob(e=["SceneOpened", on_file_opened_callback], protected=True)
 
 def on_file_opened_callback(*args):
-    """씬 열릴 때 실행되는 콜백"""
-    if cmds.window("rrAnimout", exists=True):
-        cmds.deleteUI("rrAnimout")
-    # 씬/컷 번호 가져오기
-    scene, cut = get_scene_and_cut()
-    update_camera_name(scene, cut)   # ✅ 씬 열릴 때 카메라 이름 검사
-        
+    """SceneOpened ? ?? ?? ???? ????? ?? ???."""
+    if not cmds.window("rrAnimout", exists=True):
+        return
+    try:
+        update_menus_from_current_file()
+    except Exception as exc:
+        cmds.warning(f"[AnimOut] Failed to sync browser after scene open: {exc}")
+
 def update_camera_name(scene_number, cut_number):
     if not scene_number or scene_number == "N/A" or not cut_number or cut_number == "N/A":
         return None
