@@ -10,6 +10,10 @@ import imp
 from functools import partial
 import sys, contextlib, os
 
+SCRIPT_PATH = r"M:\RND\SFtools\2023\render\rrAnimout.py"
+SCRIPT_BACKUP_DIR = r"M:\RND\SFtools\2023\render\_t"
+DEPLOY_ALLOWED_USERS = {"hwang"}
+
 @contextlib.contextmanager
 def suppress_stdout_stderr():
     """마야 USD 익스포트 등에서 콘솔 로그를 잠재움"""
@@ -36,6 +40,63 @@ projects = {
     "FUZZ": "Z:/",
     "COC": "S:/PROJECT/COC/02_Production"
 }
+
+
+def normalize_path(path):
+    return os.path.normcase(os.path.abspath(path))
+
+
+def can_show_deploy_tools():
+    return os.environ.get("USERNAME", "").strip().lower() in {user.lower() for user in DEPLOY_ALLOWED_USERS}
+
+
+def get_next_script_backup_path(target_path=SCRIPT_PATH, backup_dir=SCRIPT_BACKUP_DIR):
+    base_name = os.path.splitext(os.path.basename(target_path))[0]
+    extension = os.path.splitext(target_path)[1]
+    version_pattern = re.compile(rf"^{re.escape(base_name)}_v(\d+)(?:.*){re.escape(extension)}$", re.IGNORECASE)
+    max_version = 0
+    if os.path.isdir(backup_dir):
+        for file_name in os.listdir(backup_dir):
+            match = version_pattern.match(file_name)
+            if match:
+                max_version = max(max_version, int(match.group(1)))
+    next_version = max_version + 1
+    return os.path.join(backup_dir, f"{base_name}_v{next_version:03d}{extension}"), next_version
+
+
+def reload_rranimout(*args):
+    try:
+        if cmds.window("rrAnimout", exists=True):
+            cmds.deleteUI("rrAnimout")
+        create_ui()
+    except Exception as e:
+        cmds.warning(f"[AnimOut Reload] Failed: {e}")
+
+
+def deploy_rranimout(*args):
+    local_path = os.path.abspath(__file__)
+    target_path = SCRIPT_PATH
+    if not can_show_deploy_tools():
+        cmds.warning("[AnimOut Deploy] Deploy is allowed only for approved users.")
+        return
+    if normalize_path(local_path) == normalize_path(target_path):
+        cmds.warning("[AnimOut Deploy] This script is already running from the deploy path.")
+        return
+    try:
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        os.makedirs(SCRIPT_BACKUP_DIR, exist_ok=True)
+        if os.path.exists(target_path):
+            backup_path, version_number = get_next_script_backup_path(target_path, SCRIPT_BACKUP_DIR)
+            shutil.copy2(target_path, backup_path)
+            print(f"[AnimOut Deploy] Backup v{version_number:03d}: {backup_path}")
+        shutil.copy2(local_path, target_path)
+        cmds.confirmDialog(
+            title="Deploy Complete",
+            message=f"Deployed rrAnimout.py\n\nFrom:\n{local_path}\n\nTo:\n{target_path}",
+            button=["OK"]
+        )
+    except Exception as e:
+        cmds.warning(f"[AnimOut Deploy] Failed: {e}")
 
 ppPath = 'M:/RND/SFtools/2023/pipeline/'
 
@@ -3141,6 +3202,12 @@ def rrAnimout_UI():
     cmds.button(label="Export Garment", backgroundColor=[0.4, 0.4, 0.4], height=30, width=138, command=lambda *args: export_garment())
     cmds.setParent('..')
     cmds.separator(height=2, style='none')
+    if can_show_deploy_tools():
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=[138, 138], columnAlign=[(1, 'center'), (2, 'center')])
+        cmds.button(label="Reload", backgroundColor=[0.35, 0.35, 0.35], height=30, width=138, command=reload_rranimout)
+        cmds.button(label="Deploy", backgroundColor=[0.35, 0.35, 0.35], height=30, width=138, command=deploy_rranimout)
+        cmds.setParent('..')
+        cmds.separator(height=2, style='none')
     cmds.setParent('..')
     cmds.separator(height=5, style='none')
     cmds.setParent('..')
