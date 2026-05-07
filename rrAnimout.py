@@ -1069,8 +1069,7 @@ def update_files(*args, selected_process=None):
         if os.path.isdir(files_path):
             files = sorted(
                 [f for f in os.listdir(files_path) if os.path.isfile(os.path.join(files_path, f)) and f.lower().endswith(('.ma', '.mb'))],
-                key=lambda f: os.path.getmtime(os.path.join(files_path, f)),
-                reverse=True
+                key=lambda f: f.lower()
             )
         for file in files:
             cmds.menuItem(parent='fileMenu', label=file)
