@@ -695,7 +695,7 @@ if is_ttm:
     # print("[INFO] 일반 파일: PROP_NAMES는 prop 디렉토리 기준으로만 사용됩니다.")
 
 
-# def get_scene_cut_camera():
+# def get_scene_cut_camera(warn_if_missing=True):
     # cameras = cmds.ls(type='camera')
     # for camera in cameras:
         # transform = cmds.listRelatives(camera, parent=True)[0]
@@ -706,7 +706,7 @@ if is_ttm:
                 # return transform
     # return None
 
-def get_scene_cut_camera():
+def get_scene_cut_camera(warn_if_missing=True):
     """씬 내 카메라 자동 탐색 (기존 cam_패턴 + prefix_cam 패턴 모두 지원)"""
     cameras = cmds.ls(type='camera')
     if not cameras:
@@ -2282,8 +2282,8 @@ def on_file_opened_callback(*args):
     scene, cut = get_scene_and_cut()
     update_camera_name(scene, cut)   # ✅ 씬 열릴 때 카메라 이름 검사
         
-def update_camera_name(scene_number, cut_number):
-    camera = get_scene_cut_camera()
+def update_camera_name(scene_number, cut_number, warn_if_missing=True):
+    camera = get_scene_cut_camera(warn_if_missing=warn_if_missing)
     if not camera:
         return None
     expected_camera_name = f"cam_{scene_number}_{cut_number}"
@@ -2977,7 +2977,7 @@ def rrAnimout_UI():
     cmds.rowLayout(numberOfColumns=1, columnWidth1=276, columnAlign=[(1, 'center')])
     cmds.optionMenu('fileMenu', height=30, width=276, backgroundColor=[0.35, 0.35, 0.35])
     scene, cut = get_scene_and_cut()
-    camera = update_camera_name(scene, cut)
+    camera = update_camera_name(scene, cut, warn_if_missing=False)
     cmds.setParent('..')
 
     cmds.rowLayout(numberOfColumns=2, columnWidth2=[45, 230])
@@ -3167,5 +3167,10 @@ def on_open_button_click(*args):
     if result == 'OK':
         load_selected_asset("open")
 
-cmds.evalDeferred(lambda *args: remove_malicious_nodes())
-rrAnimout_UI()
+def create_ui():
+    cmds.evalDeferred(lambda *args: remove_malicious_nodes())
+    rrAnimout_UI()
+
+
+if __name__ == "__main__":
+    create_ui()
