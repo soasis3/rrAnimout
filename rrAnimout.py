@@ -1286,7 +1286,7 @@ def get_expected_camera_names(scene_number=None, cut_number=None):
         if not base_name:
             return []
 
-        return [base_name, f"cam_{base_name}"]
+        return [base_name]
 
     if scene_number is None or cut_number is None:
         scene_number, cut_number = get_scene_and_cut()
