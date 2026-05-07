@@ -612,11 +612,15 @@ def update_files(*args, selected_process=None):
            current_scene != 'No scenes available' and current_cut != 'No cuts available' and current_process != 'No processes available':
             files_path = get_scene_work_path(current_scene, current_cut, current_process)
             if os.path.exists(files_path):
-                files = sorted(
-                    [f for f in os.listdir(files_path) if os.path.isfile(os.path.join(files_path, f)) and f.lower().endswith(('.ma', '.mb'))],
-                    key=lambda f: os.path.getmtime(os.path.join(files_path, f)),
-                    reverse=True
-                )
+                file_candidates = [f for f in os.listdir(files_path) if os.path.isfile(os.path.join(files_path, f)) and f.lower().endswith(('.ma', '.mb'))]
+                if is_coc_project():
+                    files = sorted(file_candidates, key=lambda f: f.lower())
+                else:
+                    files = sorted(
+                        file_candidates,
+                        key=lambda f: os.path.getmtime(os.path.join(files_path, f)),
+                        reverse=True
+                    )
                 if files:
                     for file in files:
                         cmds.menuItem(parent='fileMenu', label=file)
@@ -3179,6 +3183,12 @@ def rrAnimout_UI():
     cmds.button(label="Export ▶ 씬선택 카메라", height=30, backgroundColor=[0.35, 0.4, 0.4], width=276, command=export_selected_camera_from_scene)   
     cmds.setParent('..')
     cmds.separator(height=2, style='none')
+    if can_show_deploy_tools():
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=[138, 138], columnAlign=[(1, 'center'), (2, 'center')])
+        cmds.button(label="Reload", backgroundColor=[0.35, 0.35, 0.35], height=30, width=138, command=reload_rranimout)
+        cmds.button(label="Deploy", backgroundColor=[0.35, 0.35, 0.35], height=30, width=138, command=deploy_rranimout)
+        cmds.setParent('..')
+        cmds.separator(height=2, style='none')
     cmds.setParent('..')  # columnLayout mainAnimoutColumn
     cmds.setParent('..')  # frameLayout ANIMOUT
 
@@ -3202,12 +3212,6 @@ def rrAnimout_UI():
     cmds.button(label="Export Garment", backgroundColor=[0.4, 0.4, 0.4], height=30, width=138, command=lambda *args: export_garment())
     cmds.setParent('..')
     cmds.separator(height=2, style='none')
-    if can_show_deploy_tools():
-        cmds.rowLayout(numberOfColumns=2, columnWidth2=[138, 138], columnAlign=[(1, 'center'), (2, 'center')])
-        cmds.button(label="Reload", backgroundColor=[0.35, 0.35, 0.35], height=30, width=138, command=reload_rranimout)
-        cmds.button(label="Deploy", backgroundColor=[0.35, 0.35, 0.35], height=30, width=138, command=deploy_rranimout)
-        cmds.setParent('..')
-        cmds.separator(height=2, style='none')
     cmds.setParent('..')
     cmds.separator(height=5, style='none')
     cmds.setParent('..')
