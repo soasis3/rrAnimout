@@ -3010,6 +3010,13 @@ def rrAnimout_UI():
     current_project = get_current_project()
     set_current_project(current_project)
 
+    if can_show_deploy_tools():
+        cmds.rowLayout(numberOfColumns=2, columnWidth2=[138, 138], columnAlign=[(1, 'center'), (2, 'center')])
+        cmds.button(label="Reload", backgroundColor=[0.35, 0.35, 0.35], height=30, width=138, command=reload_rranimout)
+        cmds.button(label="Deploy", backgroundColor=[0.35, 0.35, 0.35], height=30, width=138, command=deploy_rranimout)
+        cmds.setParent('..')
+        cmds.separator(height=2, style='none')
+
     # SCENE BROWSER
     cmds.frameLayout(cll=1, lv=1, l='SCENE BROWSER', fn="smallPlainLabelFont", mh=0, mw=8, backgroundColor=[0.26, 0.26, 0.26])
     cmds.columnLayout(adjustableColumn=False, backgroundColor=[0.29, 0.29, 0.29], co=('both', 3), rs=3)
@@ -3026,13 +3033,6 @@ def rrAnimout_UI():
     cmds.menuItem(label="FUZZ")    
     cmds.optionMenu(projectMenuName, edit=True, value=current_project, changeCommand=update_scenes)
     cmds.setParent('..')
-
-    if can_show_deploy_tools():
-        cmds.rowLayout(numberOfColumns=2, columnWidth2=[138, 138], columnAlign=[(1, 'center'), (2, 'center')])
-        cmds.button(label="Reload", backgroundColor=[0.35, 0.35, 0.35], height=30, width=138, command=reload_rranimout)
-        cmds.button(label="Deploy", backgroundColor=[0.35, 0.35, 0.35], height=30, width=138, command=deploy_rranimout)
-        cmds.setParent('..')
-        cmds.separator(height=2, style='none')
 
     cmds.rowLayout(numberOfColumns=3, columnWidth3=[90, 91, 91], columnAlign=[(1, 'center'), (2, 'center'), (3, 'center')])
     cmds.text(label="SCENE", height=20, width=90)
