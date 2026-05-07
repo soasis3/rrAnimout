@@ -652,17 +652,25 @@ def get_subfolder_names(directory, exclude_word='light'):
                       if os.path.isdir(os.path.join(directory, name)) and exclude_word not in name]
         return subfolders
     except OSError as e:
-        print(f"Error: Failed to access directory '{directory}'. Exception: {e}")
+        if not is_coc_project() or directory == os.path.join(get_project_paths(), "assets", "ch"):
+            print(f"Error: Failed to access directory '{directory}'. Exception: {e}")
         return []
 
 base_path = get_project_paths()
-character_dir = os.path.join(base_path, "assets", "ch")
-background_dir = os.path.join(base_path, "assets", "bg")
-prop_dir = os.path.join(base_path, "assets", "prop")
-
-CHARACTER_NAMES = get_subfolder_names(character_dir)
-BG_NAMES = get_subfolder_names(background_dir)
-PROP_NAMES = get_subfolder_names(prop_dir)
+if is_coc_project():
+    character_dir = os.path.join(base_path, "CHSetup", "controller")
+    background_dir = ""
+    prop_dir = ""
+    CHARACTER_NAMES = get_subfolder_names(character_dir)
+    BG_NAMES = []
+    PROP_NAMES = []
+else:
+    character_dir = os.path.join(base_path, "assets", "ch")
+    background_dir = os.path.join(base_path, "assets", "bg")
+    prop_dir = os.path.join(base_path, "assets", "prop")
+    CHARACTER_NAMES = get_subfolder_names(character_dir)
+    BG_NAMES = get_subfolder_names(background_dir)
+    PROP_NAMES = get_subfolder_names(prop_dir)
 
 # 현재 파일 이름 분석
 current_file_name = os.path.basename(cmds.file(q=True, sn=True))
@@ -2873,7 +2881,11 @@ def restore_browser_state():
 
     try:
         # 프로젝트 먼저 세팅
-        cmds.optionMenu(projectMenuName, edit=True, value=state["project"])
+        project_items = cmds.optionMenu(projectMenuName, q=True, itemListLong=True) or []
+        project_labels = [cmds.menuItem(i, q=True, label=True) for i in project_items]
+        target_project = state.get("project", "")
+        if target_project in project_labels:
+            cmds.optionMenu(projectMenuName, edit=True, value=target_project)
         update_scenes()
 
         # 씬 세팅 (존재 여부 확인)
@@ -2944,6 +2956,7 @@ def rrAnimout_UI():
     cmds.menuItem(label="ARBO_BION")
     cmds.menuItem(label="BTS")    
     cmds.menuItem(label="CKR")    
+    cmds.menuItem(label="COC")
     cmds.menuItem(label="DSC")
     cmds.menuItem(label="FUZZ")    
     cmds.optionMenu(projectMenuName, edit=True, value=current_project, changeCommand=update_scenes)
