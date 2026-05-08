@@ -465,18 +465,17 @@ def get_scene_work_path(scene_number, cut_number=None, process=None, project_nam
     return os.path.normpath(join_config_path(*parts))
 
 def get_coc_cut_folder_path(scene_number, cut_number=None, project_name=None, episode_name=None):
+    """COC 전용: S:/PROJECT/COC/02_Production/Rendering/EP01/파일이름/cache/ 구조"""
     if not is_character_only_project(project_name):
         return None
 
     config = get_config_by_project_name(project_name)
     cache_base = config.get("cache_base", "")
-    scene_part = str(scene_number or "").strip()
-    cut_part = str(cut_number or "").strip()
-    if not scene_part or scene_part == "N/A":
-        return None
 
     current_file = cmds.file(q=True, sn=True)
     episode_name = str(episode_name or "").strip()
+
+    # episode_name (EP01 등) 파싱 - scene_root 기준 상대경로 첫 번째 폴더
     if not episode_name and current_file:
         try:
             scene_root = os.path.normpath(get_scene_root_path(project_name))
@@ -486,15 +485,24 @@ def get_coc_cut_folder_path(scene_number, cut_number=None, project_name=None, ep
         except Exception:
             episode_name = ""
 
-    if not episode_name:
-        work_path = get_scene_work_path(scene_number, cut_number, get_work_dir_name(project_name), project_name)
-        if not work_path:
-            return None
-        episode_name = os.path.basename(os.path.dirname(os.path.normpath(work_path)))
+    # EP 패턴으로 못 찾았으면 경로에서 직접 검색
+    if not episode_name and current_file:
+        for part in os.path.normpath(current_file).split(os.sep):
+            if re.match(r"^EP\d+$", str(part or ""), re.IGNORECASE):
+                episode_name = part
+                break
 
-    cut_folder_name = scene_part
+    if not episode_name:
+        return None
+
+    # COC는 cut_number가 파일명(확장자 제외) = 폴더명
+    cut_part = str(cut_number or "").strip()
     if cut_part and cut_part != "N/A":
-        cut_folder_name = f"{scene_part}_{cut_part}"
+        cut_folder_name = cut_part
+    elif current_file:
+        cut_folder_name = os.path.splitext(os.path.basename(current_file))[0]
+    else:
+        return None
 
     if cache_base:
         return os.path.normpath(join_config_path(cache_base, episode_name, cut_folder_name))
@@ -678,26 +686,22 @@ def parse_file_path(file_path):
 
 
 def parse_coc_file_path(file_path):
+    """COC 전용 파서.
+    - scene_number = N/A (씬 개념 없음)
+    - cut_number   = 파일이름 확장자 제외 (예: C04)
+    - episode_name = 경로에서 EP01 파싱
+    """
     normalized_path = os.path.normpath(file_path)
     file_name = os.path.basename(normalized_path)
-    scene_number, cut_number = parse_scene_cut_from_filename(file_name)
-    episode_name = ""
 
-    if scene_number == "N/A":
-        parts = normalized_path.split(os.sep)
-        for part in parts:
-            if re.match(r"^C\d+$", str(part or ""), re.IGNORECASE):
-                scene_number = part
-                break
-
-    if cut_number == "N/A":
-        parts = normalized_path.split(os.sep)
-        for part in parts:
-            if re.match(r"^\d+$", str(part or "")):
-                cut_number = part
-                break
+    # cut_number = 파일이름(확장자 제외)
+    cut_number = os.path.splitext(file_name)[0]
+    scene_number = "N/A"
 
     process = "maya"
+    episode_name = ""
+
+    # episode_name: scene_root 기준 상대경로 첫 번째 폴더
     try:
         scene_root = os.path.normpath(get_scene_root_path("COC"))
         relative_parts = os.path.relpath(normalized_path, scene_root).split(os.sep)
@@ -708,7 +712,8 @@ def parse_coc_file_path(file_path):
     except Exception:
         episode_name = ""
 
-    if not episode_name:
+    # fallback: 경로에서 EP패턴 직접 검색
+    if not episode_name or not re.match(r"^EP\d+$", episode_name, re.IGNORECASE):
         for part in normalized_path.split(os.sep):
             if re.match(r"^EP\d+$", str(part or ""), re.IGNORECASE):
                 episode_name = part
@@ -797,8 +802,10 @@ def parse_file_path(file_path):
 
 
 def parse_scene_cut_process_from_current_file(file_path):
+    """항상 (scene_number, cut_number, process, file_name) 4개 반환"""
     if is_character_only_project(current_project):
-        return parse_coc_file_path(file_path)
+        scene, cut, process, file_name, episode_name = parse_coc_file_path(file_path)
+        return scene, cut, process, file_name
     return parse_file_path(file_path)
 
 def is_valid_scene_file(file_path):
@@ -810,13 +817,21 @@ def is_valid_scene_file(file_path):
         print(f"Invalid file path: {e}")
         return False
 
-    scene_root = os.path.normpath(get_scene_root_path(current_project))
     normalized_file_path = os.path.normpath(file_path)
+
+    # COC는 scene_root 대신 drive 기준으로 체크
+    if is_character_only_project(current_project):
+        config = get_config_by_project_name(current_project)
+        drive = os.path.normpath(config.get("drive", ""))
+        if drive and not normalized_file_path.startswith(drive):
+            print(f"[COC] File path '{normalized_file_path}' does not start with drive '{drive}'")
+            return False
+        return file_name.lower().endswith((".ma", ".mb"))
+
+    scene_root = os.path.normpath(get_scene_root_path(current_project))
     if not normalized_file_path.startswith(scene_root):
         print(f"File path '{normalized_file_path}' does not start with scene root '{scene_root}'")
         return False
-    if is_character_only_project(current_project):
-        return file_name.lower().endswith((".ma", ".mb"))
     return file_name.lower().endswith((".ma", ".mb"))
 
 # 메뉴 초기화 함수
@@ -1391,7 +1406,8 @@ def get_scene_and_cut():
         if is_character_only_project(current_project):
             try:
                 scene, cut, process, file_name, episode_name = parse_coc_file_path(file_path)
-                if scene != "N/A":
+                # COC는 scene=N/A가 정상, cut(파일명)만 있으면 반환
+                if cut and cut != "N/A":
                     return scene, cut
             except Exception:
                 pass
@@ -1411,17 +1427,28 @@ def get_export_status(asset_name, category, scene_number, cut_number):
     project_prefix = get_project_prefix()
     cache_dir = get_cache_dir_path(scene_number, cut_number, current_project)
 
+    sn = scene_number if scene_number and scene_number != "N/A" else None
+    cn = cut_number if cut_number and cut_number != "N/A" else None
     if category == 'cam':
-        paths = [
-            os.path.join(cache_dir, f"{project_prefix}_{scene_number}_{cut_number}_cam.fbx")
-        ]
+        if sn:
+            paths = [os.path.join(cache_dir, f"{project_prefix}_{sn}_{cn}_cam.fbx")]
+        else:
+            paths = [os.path.join(cache_dir, f"{project_prefix}_{cn}_cam.fbx")]
     else:
-        paths = [
-            os.path.join(cache_dir, f"{project_prefix}_{scene_number}_{cut_number}_{category}_{asset_name}.usd"),
-            os.path.join(cache_dir, f"{project_prefix}_{scene_number}_{cut_number}_anim_{asset_name}.json"),
-            os.path.join(cache_dir, f"{project_prefix}_{scene_number}_{cut_number}_{category}_{asset_name}.fbx"),
-            os.path.join(cache_dir, f"{project_prefix}_{scene_number}_{cut_number}_{category}_{asset_name}.abc")
-        ]
+        if sn:
+            paths = [
+                os.path.join(cache_dir, f"{project_prefix}_{sn}_{cn}_{category}_{asset_name}.usd"),
+                os.path.join(cache_dir, f"{project_prefix}_{sn}_{cn}_anim_{asset_name}.json"),
+                os.path.join(cache_dir, f"{project_prefix}_{sn}_{cn}_{category}_{asset_name}.fbx"),
+                os.path.join(cache_dir, f"{project_prefix}_{sn}_{cn}_{category}_{asset_name}.abc"),
+            ]
+        else:
+            paths = [
+                os.path.join(cache_dir, f"{project_prefix}_{cn}_{category}_{asset_name}.usd"),
+                os.path.join(cache_dir, f"{project_prefix}_{cn}_anim_{asset_name}.json"),
+                os.path.join(cache_dir, f"{project_prefix}_{cn}_{category}_{asset_name}.fbx"),
+                os.path.join(cache_dir, f"{project_prefix}_{cn}_{category}_{asset_name}.abc"),
+            ]
 
     existing_files = [path for path in paths if os.path.exists(path)]
     if not existing_files:
@@ -1437,7 +1464,12 @@ def get_export_status(asset_name, category, scene_number, cut_number):
 
 def get_camera_export_status(scene_number, cut_number):
     project_prefix = get_project_prefix()
-    export_path = os.path.join(get_cache_dir_path(scene_number, cut_number, current_project), f"{project_prefix}_{scene_number}_{cut_number}_cam.fbx")
+    sn = scene_number if scene_number and scene_number != "N/A" else None
+    if sn:
+        cam_filename = f"{project_prefix}_{scene_number}_{cut_number}_cam.fbx"
+    else:
+        cam_filename = f"{project_prefix}_{cut_number}_cam.fbx"
+    export_path = os.path.join(get_cache_dir_path(scene_number, cut_number, current_project), cam_filename)
     if os.path.exists(export_path):
         mod_time = os.path.getmtime(export_path)
         formatted_date = time.strftime("%y%m%d", time.localtime(mod_time))
@@ -1633,12 +1665,43 @@ def find_props_in_scene():
 def clean_asset_token(name):
     token = os.path.splitext(os.path.basename(str(name or "")))[0]
     token = token.split(":")[-1].split("|")[-1]
-    token = re.sub(r"^(rig|mod|pub|fin|final)_", "", token, flags=re.IGNORECASE)
-    token = re.sub(r"(_rig|_mod|_pub|_fin|_final)$", "", token, flags=re.IGNORECASE)
-    token = re.sub(r"(_rig|_mod|_pub|_fin|_final)_v\d+$", "", token, flags=re.IGNORECASE)
-    token = re.sub(r"[_-]?v\d+$", "", token, flags=re.IGNORECASE)
-    token = re.sub(r"[_-]?\d+$", "", token)
+    previous = None
+    while token != previous:
+        previous = token
+        token = re.sub(r"^(rig|mod|pub|fin|final)_", "", token, flags=re.IGNORECASE)
+        token = re.sub(r"(_rig|_mod|_pub|_fin|_final)$", "", token, flags=re.IGNORECASE)
+        token = re.sub(r"(_rig|_mod|_pub|_fin|_final)_v\d+$", "", token, flags=re.IGNORECASE)
+        token = re.sub(r"[_-]?v\d+$", "", token, flags=re.IGNORECASE)
+        token = re.sub(r"[_-]?\d+$", "", token)
     return token
+
+def match_asset_name_to_known_names(candidates, known_names):
+    known_names = list(known_names or [])
+    if not known_names:
+        return ""
+
+    normalized_known = []
+    for known_name in known_names:
+        normalized_known.append((known_name, clean_asset_token(known_name).lower()))
+
+    for candidate in candidates:
+        lowered = clean_asset_token(candidate).lower()
+        if not lowered:
+            continue
+
+        for known_name, known_lower in normalized_known:
+            if lowered == known_lower:
+                return known_name
+
+        for known_name, known_lower in normalized_known:
+            if lowered.startswith(known_lower) or known_lower.startswith(lowered):
+                return known_name
+
+        for known_name, known_lower in normalized_known:
+            if known_lower in lowered or lowered in known_lower:
+                return known_name
+
+    return ""
 
 def get_reference_path_for_node(node):
     try:
@@ -1651,7 +1714,8 @@ def get_reference_path_for_node(node):
 def get_asset_candidate_tokens(group):
     short_name = group.split("|")[-1]
     tokens = [short_name.split(":")[-1]]
-    tokens.extend([part for part in short_name.split(":")[:-1] if part])
+    if not is_character_only_project(current_project):
+        tokens.extend([part for part in short_name.split(":")[:-1] if part])
     reference_path = get_reference_path_for_node(group)
     if reference_path:
         tokens.append(os.path.basename(reference_path))
@@ -1665,26 +1729,17 @@ def get_asset_candidate_tokens(group):
     return cleaned
 
 def infer_asset_name_from_group(group, known_names):
-    known_names = list(known_names or [])
-    known_by_lower = dict((name.lower(), name) for name in known_names)
     candidates = get_asset_candidate_tokens(group)
+    matched_name = match_asset_name_to_known_names(candidates, known_names)
+    if matched_name:
+        return matched_name
 
-    for candidate in candidates:
-        lowered = candidate.lower()
-        if lowered in known_by_lower:
-            return known_by_lower[lowered]
-
-    for candidate in candidates:
-        lowered = candidate.lower()
-        for known_lower, known_name in known_by_lower.items():
-            if lowered.startswith(known_lower) or known_lower.startswith(lowered):
-                return known_name
+    if is_character_only_project(current_project):
+        return ""
 
     return candidates[0] if candidates else ""
 
 def infer_asset_name_from_reference_path(reference_path, known_names):
-    known_names = list(known_names or [])
-    known_by_lower = dict((name.lower(), name) for name in known_names)
     path_parts = re.split(r"[\\/]+", str(reference_path or ""))
     candidates = []
 
@@ -1693,16 +1748,9 @@ def infer_asset_name_from_reference_path(reference_path, known_names):
         if clean and clean not in candidates:
             candidates.append(clean)
 
-    for candidate in candidates:
-        lowered = candidate.lower()
-        if lowered in known_by_lower:
-            return known_by_lower[lowered]
-
-    for candidate in candidates:
-        lowered = candidate.lower()
-        for known_lower, known_name in known_by_lower.items():
-            if known_lower in lowered or lowered in known_lower:
-                return known_name
+    matched_name = match_asset_name_to_known_names(candidates, known_names)
+    if matched_name:
+        return matched_name
 
     return candidates[0] if candidates else ""
 
@@ -2123,7 +2171,7 @@ def export_alembic(character_name, character_geo, scene_number, cut_number):
         if not os.path.exists(export_path):
             os.makedirs(export_path)
         project_prefix = get_project_prefix()
-        file_name = f"{project_prefix}_{scene_number}_{cut_number}_{character_name}.abc"
+        file_name = _make_cache_filename(project_prefix, scene_number, cut_number, character_name) + ".abc"
         full_export_path = os.path.join(export_path, file_name)
         minTime = cmds.playbackOptions(query=True, minTime=True)
         maxTime = cmds.playbackOptions(query=True, maxTime=True)
@@ -2181,7 +2229,7 @@ def export_selected_to_usd():
 
             local_cache_path = os.path.join(os.getenv('TEMP'), 'MayaUSDExport')
             os.makedirs(local_cache_path, exist_ok=True)
-            file_name = f"{get_project_prefix()}_{scene_number}_{cut_number}_prop_{unique_name}.usd"
+            file_name = _make_cache_filename(get_project_prefix(), scene_number, cut_number, "prop", unique_name) + ".usd"
             local_file_path = os.path.join(local_cache_path, file_name)
 
             usd_options = (
@@ -2347,6 +2395,20 @@ def _force_timesamples_with_cluster(geo_root, t_start, t_end, eps=1e-5):
 
 
 
+
+def _make_cache_filename(project_prefix, scene_number, cut_number, *parts):
+    """COC(scene=N/A)는 cut_number만, 나머지는 scene_cut 조합으로 파일명 prefix 생성"""
+    sn = scene_number if scene_number and str(scene_number) != "N/A" else None
+    cn = cut_number if cut_number and str(cut_number) != "N/A" else None
+    if sn and cn:
+        base = f"{project_prefix}_{sn}_{cn}"
+    elif cn:
+        base = f"{project_prefix}_{cn}"
+    else:
+        base = project_prefix
+    suffix = "_".join(str(p) for p in parts if p)
+    return f"{base}_{suffix}" if suffix else base
+
 def export_usd(character_name, character_group, scene_number, cut_number, minTime):
     """
     캐릭터 그룹 하위의 'geo'만 복사해서 USD로 익스포트.
@@ -2420,7 +2482,7 @@ def export_usd(character_name, character_group, scene_number, cut_number, minTim
             cmds.select(clear=True)
             cmds.select("geo", r=True)
 
-            file_name = f"{get_project_prefix()}_{scene_number}_{cut_number}_ch_{character_name}.usd"
+            file_name = _make_cache_filename(get_project_prefix(), scene_number, cut_number, "ch", character_name) + ".usd"
             local_cache_path = os.path.normpath(os.path.join(os.getenv('TEMP'), 'MayaUSDExport'))
             local_file_path = os.path.normpath(os.path.join(local_cache_path, file_name))
             os.makedirs(local_cache_path, exist_ok=True)
@@ -2466,7 +2528,22 @@ def export_usd(character_name, character_group, scene_number, cut_number, minTim
 
 
             
-# def export_usd(character_name, character_group, scene_number, cut_number, minTime):
+# 
+def _make_cache_filename(project_prefix, scene_number, cut_number, *parts):
+    """COC(scene=N/A)는 cut_number만, 나머지는 scene_cut 조합으로 파일명 prefix 생성"""
+    sn = scene_number if scene_number and str(scene_number) != "N/A" else None
+    cn = cut_number if cut_number and str(cut_number) != "N/A" else None
+    if sn and cn:
+        base = f"{project_prefix}_{sn}_{cn}"
+    elif cn:
+        base = f"{project_prefix}_{cn}"
+    else:
+        base = project_prefix
+    suffix = "_".join(str(p) for p in parts if p)
+    return f"{base}_{suffix}" if suffix else base
+
+def export_usd(character_name, character_group, scene_number, cut_number, minTime):
+    pass  # legacy stub
     # """
     # 캐릭터 그룹 하위의 'geo'만 복사해서 USD로 익스포트.
     # 이름은 항상 'geo'로 고정, headTip_skin 베이크 포함.
@@ -2630,7 +2707,7 @@ def export_usd_prop(scene_number, cut_number, prop_name, prop_group):
             cmds.bakeResults("geo", t=(start_frame, end_frame), shape=True)
 
             # USD 임시 경로
-            file_name = f"{get_project_prefix()}_{scene_number}_{cut_number}_prop_{prop_name}.usd"
+            file_name = _make_cache_filename(get_project_prefix(), scene_number, cut_number, "prop", prop_name) + ".usd"
             local_path = os.path.join(os.getenv('TEMP'), 'MayaUSDExport')
             os.makedirs(local_path, exist_ok=True)
             local_usd = os.path.join(local_path, file_name)
@@ -2768,7 +2845,7 @@ def export_usd_bg(bg_name, bg_geo, scene_number, cut_number, selected_only=False
                 cmds.bakeResults("geo", t=(minTime, endTime), shape=True)
 
                 # 파일명 및 경로 설정
-                file_name = f"{project_prefix}_{scene_number}_{cut_number}_bg_{short_name}.usd"
+                file_name = _make_cache_filename(project_prefix, scene_number, cut_number, "bg", short_name) + ".usd"
                 local_cache_path = os.path.normpath(os.path.join(os.getenv('TEMP'), 'MayaUSDExport'))
                 os.makedirs(local_cache_path, exist_ok=True)
                 local_file_path = os.path.normpath(os.path.join(local_cache_path, file_name))
@@ -3088,7 +3165,10 @@ def export_camera(scene_number, cut_number, selected_only=False):
                 h_aperture_mm = 0.0
                 v_aperture_mm = 0.0
 
-            json_file_name = f"{project_prefix}_{scene_number}_{cut_number}_camera_data.json"
+            if scene_number and scene_number != "N/A":
+                json_file_name = f"{project_prefix}_{scene_number}_{cut_number}_camera_data.json"
+            else:
+                json_file_name = f"{project_prefix}_{cut_number}_camera_data.json"
             full_json_path = os.path.join(export_path, json_file_name)
 
             camera_data = {
@@ -3107,7 +3187,10 @@ def export_camera(scene_number, cut_number, selected_only=False):
             print(f"Camera data exported to {full_json_path}")
 
             # 10. FBX Export
-            file_name = f"{project_prefix}_{scene_number}_{cut_number}_cam.fbx"
+            if scene_number and scene_number != "N/A":
+                file_name = f"{project_prefix}_{scene_number}_{cut_number}_cam.fbx"
+            else:
+                file_name = f"{project_prefix}_{cut_number}_cam.fbx"
             full_export_path = os.path.join(export_path, file_name)
 
             cmds.select(duplicated_camera, r=True)
@@ -3334,7 +3417,14 @@ def normalize_path(path):
     return os.path.normcase(os.path.abspath(path))
 
 def can_show_deploy_tools():
-    return os.environ.get("USERNAME", "").strip().lower() in {user.lower() for user in DEPLOY_ALLOWED_USERS}
+    if os.environ.get("USERNAME", "").strip().lower() not in {user.lower() for user in DEPLOY_ALLOWED_USERS}:
+        return False
+    # 이미 배포된 경로(M드라이브)에서 실행 중이면 Deploy 버튼 숨기기
+    current_path = normalize_path(os.path.abspath(__file__))
+    deploy_path = normalize_path(SCRIPT_PATH)
+    if current_path == deploy_path:
+        return False
+    return True
 
 def sync_hwang_local_project_json_files():
     if not is_hwang_dev_environment():
@@ -3726,7 +3816,7 @@ def setup_camera_ui(scene_number, cut_number):
         parent=camera_layout
     )
 
-    short_name = shorten_name_for_button(camera_name.split(":")[-1])
+    short_name = shorten_name_for_button(camera_name.split("|")[-1].split(":")[-1])
     short_name_wrapped = split_name_to_two_lines(short_name)
 
     # 캐시 상태 확인 (category는 'cam')
